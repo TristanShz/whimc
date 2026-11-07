@@ -121,6 +121,28 @@ export function levelBlend(
 }
 
 /**
+ * The zooms (screen pixels per map unit) at which a level is the one in
+ * view: from revealZoom, until the level below it starts to show (three
+ * times revealZoom for the Files). Null while a radius it needs is unknown.
+ */
+export function levelZooms(
+  radii: Record<Level, number | null>,
+  level: Level,
+): { min: number; max: number } | null {
+  const min = revealZoom(radii, level);
+  if (min === null) return null;
+  const below =
+    level === "packages"
+      ? radii.directories
+      : level === "directories"
+        ? radii.files
+        : null;
+  if (level === "files") return { min, max: min * 3 };
+  if (below === null || below <= 0) return null;
+  return { min, max: Math.max(min, VIEW.revealStartPx / below) };
+}
+
+/**
  * The zoom (screen pixels per map unit) at which a level is fully in view:
  * its typical disc, and that of every level above it down to it, reaches
  * the end of the reveal on screen. 0 for the Packages, always in view; null

@@ -4,7 +4,7 @@ The Map is rendered with Sigma.js 3 over a graphology graph, with two programs o
 
 The renderer stays thin: the view state decides what to draw (`computeView`), pure modules turn its decisions into attributes and scales (`web/src/render/attributes.ts`, `scales.ts`, `camera.ts`), and `graphSync` applies only what changed to the graph. Two things live on the GPU so that zooming and hovering never rebuild the buffers: the level blend is a uniform read every frame (the view state is recomputed only when the camera changes which levels are drawn or what is fetched, see `cameraSignature`), and opacity changes are transitions the shader interpolates from a start time. Node sizes are in map units (`itemSizesReference: "positions"`), so the engine's radii are drawn as they are, with a minimum radius on screen so small Modules stay visible and clickable.
 
-Accepted costs: Sigma's label grid does not know label widths, so whimc drops colliding labels itself; sigma ignores node attributes it does not know, so every visual decision is an attribute of ours that only our programs read.
+Accepted costs: Sigma's label grid does not know label widths and dropped the labels of mid-sized discs next to big ones, so whimc draws the labels itself after each render (every disc of 9 px of radius or more on screen, forced ones first, then the level in view, biggest first; a label that collides takes the place above its disc, else is left out); sigma ignores node attributes it does not know, so every visual decision is an attribute of ours that only our programs read.
 
 ## Dependencies run from disc to disc, above the discs
 

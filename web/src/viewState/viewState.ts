@@ -282,6 +282,8 @@ export interface SearchMatch {
   x: number;
   y: number;
   radius: number;
+  /** The Modules it lies in, its parent first, as far as fetched. */
+  ancestors: string[];
 }
 
 /**
@@ -294,19 +296,41 @@ export function searchMatches(data: MapData, ui: UiState): SearchMatch[] {
   const query = ui.search.trim().toLowerCase();
   if (!query) return [];
   const comparison = ui.changes ? data.comparison : null;
+  const all = LEVELS.map(
+    (l) =>
+      [
+        l,
+        [
+          ...(data.levels[l]?.modules ?? []),
+          ...(comparison?.[l].modules ?? []),
+        ],
+      ] as const,
+  );
+  const parents = new Map<string, string>();
+  for (const [, ms] of all)
+    for (const m of ms) if (m.parent) parents.set(m.id, m.parent);
+  const ancestors = (id: string) => {
+    const out: string[] = [];
+    for (let p = parents.get(id); p !== undefined; p = parents.get(p))
+      out.push(p);
+    return out;
+  };
   const out = new Map<string, SearchMatch>();
-  for (const l of LEVELS) {
-    const ms = [
-      ...(data.levels[l]?.modules ?? []),
-      ...(comparison?.[l].modules ?? []),
-    ];
+  for (const [l, ms] of all) {
     for (const m of ms) {
       if (out.has(m.id) || (m.test && !ui.tests)) continue;
       if (
         m.name.toLowerCase().includes(query) ||
         m.path.toLowerCase().includes(query)
       )
-        out.set(m.id, { id: m.id, level: l, x: m.x, y: m.y, radius: m.radius });
+        out.set(m.id, {
+          id: m.id,
+          level: l,
+          x: m.x,
+          y: m.y,
+          radius: m.radius,
+          ancestors: ancestors(m.id),
+        });
     }
   }
   return [...out.values()];
@@ -334,9 +358,13 @@ function requests(
     directories: dirsBig,
     files: filesBig,
   };
+  // A search looks in every level it can hold whole, in view or not, so
+  // that Enter can take the camera to matches at a level not shown yet.
+  const searching = ui.search.trim() !== "";
   const maps: MapRequest[] = [];
   for (const l of LEVELS) {
-    if (l !== "packages" && weights[l] <= 0) continue;
+    if (l !== "packages" && weights[l] <= 0 && !(searching && !big[l]))
+      continue;
     maps.push({
       level: l,
       tests: ui.tests,

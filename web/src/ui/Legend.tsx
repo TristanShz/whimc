@@ -1,8 +1,43 @@
 // What size, colour and edge style mean, so the Map reads without docs.
 
+import { useState } from "react";
+import { LEGEND_KEY, legendAtStart } from "./legendState";
+
 const wide = () =>
   typeof window === "undefined" ||
   window.matchMedia("(min-width: 720px)").matches;
+
+/** Browser storage may be off: the Legend then opens as on a first view. */
+function stored(): string | null {
+  try {
+    return window.localStorage.getItem(LEGEND_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function store(value: "open" | "closed") {
+  try {
+    window.localStorage.setItem(LEGEND_KEY, value);
+  } catch {
+    // Not remembered: the next view opens as this one did.
+  }
+}
+
+function useLegendOpen(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => {
+    const start = legendAtStart(stored(), wide());
+    if (start.store) store(start.store);
+    return start.open;
+  });
+  return [
+    open,
+    (next: boolean) => {
+      setOpen(next);
+      store(next ? "open" : "closed");
+    },
+  ];
+}
 
 function Line({ dash, className }: { dash?: string; className?: string }) {
   return (
@@ -35,9 +70,17 @@ function Mark({ kind }: { kind: "added" | "modified" | "removed" }) {
 }
 
 export function Legend({ changes = false }: { changes?: boolean }) {
+  const [open, setOpen] = useLegendOpen();
   return (
-    <details className="panel legend" open={wide()}>
-      <summary>Legend</summary>
+    <details className="panel legend" open={open}>
+      <summary
+        onClick={(e) => {
+          e.preventDefault();
+          setOpen(!open);
+        }}
+      >
+        Legend
+      </summary>
       <dl>
         <div className="legend-row">
           <dt>

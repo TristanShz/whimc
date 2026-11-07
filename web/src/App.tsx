@@ -14,7 +14,7 @@ import { LEVELS, type Level, type Module } from "./api/types";
 import { useMapData } from "./data/useMapData";
 import { useLive } from "./data/useLive";
 import { MapCanvas, type MapHandle } from "./render/MapCanvas";
-import { boundsOf, diveArea } from "./render/camera";
+import { boundsOf, diveArea, insetsFrom, type Insets } from "./render/camera";
 import { keyAction } from "./render/keys";
 import { usePalette, usePrefersReducedMotion } from "./render/theme";
 import { DetailsPanel } from "./ui/DetailsPanel";
@@ -28,7 +28,9 @@ import {
   computeView,
   VIEW,
   cameraSignature,
+  frameMatches,
   levelBlend,
+  revealZoom,
   searchMatches,
   typicalRadii,
   type Camera,
@@ -141,16 +143,45 @@ export function App() {
   );
 
   const matches = useMemo(() => searchMatches(data, ui), [data, ui]);
+  /** Brings the matches into view at their own level, clear of the panels. */
   const showMatches = useCallback(() => {
-    const area = boundsOf(matches);
-    if (area) map.current?.flyTo(area, 0.7);
-  }, [matches]);
+    const insets = panelInsets();
+    const margin = 0.7;
+    const clear = {
+      width: (window.innerWidth - insets.left - insets.right) * margin,
+      height: (window.innerHeight - insets.top - insets.bottom) * margin,
+    };
+    const frame = frameMatches(matches, radii, clear);
+    if (frame)
+      map.current?.flyTo(frame.area, {
+        margin,
+        insets,
+        minZoom: frame.minZoom,
+        maxZoom: frame.maxZoom,
+      });
+  }, [matches, radii]);
 
-  /** Brings a Module's inside into view, close enough for its children to show. */
-  const dive = useCallback((m: Module) => {
-    const screen = Math.min(window.innerWidth, window.innerHeight);
-    map.current?.flyTo(diveArea(m, screen, VIEW.revealEndPx), 0.7);
-  }, []);
+  /**
+   * Brings a Module's inside into view, close enough for its children, and
+   * the level they are at, to show.
+   */
+  const dive = useCallback(
+    (m: Module) => {
+      const insets = panelInsets();
+      const screen = Math.min(
+        window.innerWidth - insets.left - insets.right,
+        window.innerHeight - insets.top - insets.bottom,
+      );
+      const below = m.level === "packages" ? "directories" : "files";
+      const minZoom = m.level === "files" ? 0 : (revealZoom(radii, below) ?? 0);
+      map.current?.flyTo(diveArea(m, screen, VIEW.revealEndPx), {
+        margin: 0.7,
+        insets,
+        minZoom,
+      });
+    },
+    [radii],
+  );
   const diveInto = useCallback(
     (id: string) => {
       for (const l of LEVELS) {
@@ -216,6 +247,7 @@ export function App() {
         bounds={bounds}
         blend={blend}
         reducedMotion={reducedMotion}
+        insets={panelInsets}
         onCamera={onCamera}
         onHover={setHovered}
         onSelect={setSelected}
@@ -311,6 +343,21 @@ export function App() {
         </span>
       )}
     </main>
+  );
+}
+
+/** The panels floating over the Map, which framing keeps clear. */
+const PANELS = ".controls > .panel, .levels, .legend, .zoom, .details";
+
+/** The screen edges the panels over the Map take, as they are laid out now. */
+function panelInsets(): Insets {
+  const panels = [...document.querySelectorAll(PANELS)].map((el) => {
+    const r = el.getBoundingClientRect();
+    return { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom };
+  });
+  return insetsFrom(
+    { width: window.innerWidth, height: window.innerHeight },
+    panels,
   );
 }
 

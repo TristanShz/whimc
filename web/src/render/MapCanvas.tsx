@@ -14,10 +14,12 @@ import Sigma from "sigma";
 import type { Rect } from "../api/types";
 import type { Camera, LevelBlend, ViewState } from "../viewState";
 import { LEVEL_INDEX } from "./attributes";
-import { cameraFrom, dotGrid, fitRatio, flipY } from "./camera";
+import { cameraFrom, dotGrid, flipY, frameArea, type Insets } from "./camera";
 import { clock, createFrame, type Frame } from "./frame";
 import { syncGraph, type MapGraph } from "./graphSync";
+import { labelOrder, type LabelCandidate } from "./labelBoxes";
 import { FONTS, createHoverDrawer, createLabelDrawer } from "./labels";
+import type { NodeLabelDrawingFunction } from "sigma/rendering";
 import {
   createEdgeProgram,
   createHoverNodeProgram,
@@ -25,13 +27,25 @@ import {
 } from "./programs";
 import type { Palette } from "./scales";
 
+/** How to frame an area: see frameArea. */
+export interface FrameOptions {
+  /** The share of the clear part of the screen the area fills. */
+  margin?: number;
+  /** Screen pixels the panels over the Map take along each edge. */
+  insets?: Insets;
+  /** Go at least this close, in screen pixels per map unit. */
+  minZoom?: number;
+  /** Go no closer than this, unless minZoom asks to. */
+  maxZoom?: number;
+}
+
 export interface MapHandle {
   zoomIn(): void;
   zoomOut(): void;
-  /** Brings the whole Map back into view. */
+  /** Brings the whole Map back into view, clear of the panels. */
   fit(): void;
   /** Brings an area of the Map, in map coordinates, into view. */
-  flyTo(area: Rect, margin?: number): void;
+  flyTo(area: Rect, options?: FrameOptions): void;
 }
 
 export interface MapCanvasProps {
@@ -42,6 +56,8 @@ export interface MapCanvasProps {
   /** The level blend at a zoom, for the frames between two view states. */
   blend: (zoom: number) => LevelBlend;
   reducedMotion: boolean;
+  /** The screen edges the panels over the Map take, to frame it clear of them. */
+  insets(): Insets;
   onCamera(camera: Camera): void;
   onHover(id: string | null): void;
   onSelect(id: string | null): void;
@@ -53,6 +69,8 @@ export interface MapCanvasProps {
 }
 
 const MAX_RATIO = 8;
+/** The share of the clear screen the whole Map fills when fitted. */
+const FIT_MARGIN = 0.94;
 const MIN_RATIO = 1e-5;
 
 export function MapCanvas(props: MapCanvasProps) {
@@ -72,6 +90,7 @@ export function MapCanvas(props: MapCanvasProps) {
   useEffect(() => {
     const el = container.current!;
     const f = frame.current;
+    const drawLabel = createLabelDrawer(f);
     let s: Sigma;
     try {
       s = new Sigma(graph.current, el, {
@@ -82,16 +101,15 @@ export function MapCanvas(props: MapCanvasProps) {
         edgeProgramClasses: { dependency: createEdgeProgram(f) },
         defaultNodeType: "disc",
         defaultEdgeType: "dependency",
-        defaultDrawNodeLabel: createLabelDrawer(f),
         defaultDrawNodeHover: createHoverDrawer(f),
+        // Labels are drawn by drawLabels: sigma's label grid drops the
+        // labels of mid-sized discs next to big ones.
+        renderLabels: false,
         itemSizesReference: "positions",
         zoomToSizeRatioFunction: (ratio) => ratio,
         zIndex: true,
         stagePadding: 0,
         labelFont: FONTS.sans,
-        labelRenderedSizeThreshold: 9,
-        labelDensity: 0.6,
-        labelGridCellSize: 160,
         enableEdgeEvents: false,
         renderEdgeLabels: false,
         minCameraRatio: MIN_RATIO,
@@ -104,7 +122,7 @@ export function MapCanvas(props: MapCanvasProps) {
       return;
     }
 
-    s.on("beforeRender", () => f.labels.clear());
+    s.on("afterRender", () => drawLabels(s, graph.current, f, drawLabel));
     s.on("enterNode", ({ node }) => latest.current.onHover(node));
     s.on("leaveNode", () => latest.current.onHover(null));
     s.on("clickNode", ({ node }) => latest.current.onSelect(node));
@@ -191,6 +209,17 @@ export function MapCanvas(props: MapCanvasProps) {
     sigma.refresh();
     // The framing changed the scale without moving the camera: no event.
     emitCamera.current();
+    // Then clear of the panels, as Fit does, once sigma has drawn with the
+    // new framing: its coordinate conversions follow its last render.
+    sigma.once("afterRender", () =>
+      flyTo(
+        sigma,
+        b,
+        { margin: FIT_MARGIN, insets: latest.current.insets() },
+        true,
+      ),
+    );
+    sigma.scheduleRender();
   }, [sigma, props.bounds]);
 
   // Draw the view state; keep rendering while a fade runs on the GPU. The
@@ -230,16 +259,18 @@ export function MapCanvas(props: MapCanvasProps) {
           factor: 1.6,
           duration: latest.current.reducedMotion ? 0 : 280,
         }),
-      fit: () =>
-        sigma?.getCamera().animate(
-          { x: 0.5, y: 0.5, ratio: 1, angle: 0 },
-          {
-            duration: latest.current.reducedMotion ? 0 : 650,
-            easing: "cubicInOut",
-          },
-        ),
-      flyTo: (area, margin = 0.85) =>
-        sigma && flyTo(sigma, area, margin, latest.current.reducedMotion),
+      fit: () => {
+        const b = latest.current.bounds;
+        if (sigma && b)
+          flyTo(
+            sigma,
+            b,
+            { margin: FIT_MARGIN, insets: latest.current.insets() },
+            latest.current.reducedMotion,
+          );
+      },
+      flyTo: (area, options = {}) =>
+        sigma && flyTo(sigma, area, options, latest.current.reducedMotion),
     }),
     [sigma],
   );
@@ -248,26 +279,83 @@ export function MapCanvas(props: MapCanvasProps) {
 }
 
 /** Animates the camera onto an area of the Map. */
-function flyTo(s: Sigma, area: Rect, margin: number, reducedMotion: boolean) {
+function flyTo(
+  s: Sigma,
+  area: Rect,
+  options: FrameOptions,
+  reducedMotion: boolean,
+) {
   const { width, height } = s.getDimensions();
   const camera = s.getCamera();
   const a = s.graphToViewport({ x: 0, y: 0 });
   const b = s.graphToViewport({ x: 1, y: 0 });
   const zoom = Math.hypot(b.x - a.x, b.y - a.y);
-  const centre = flipY({
-    x: (area.x0 + area.x1) / 2,
-    y: (area.y0 + area.y1) / 2,
-  });
-  const target = s.viewportToFramedGraph(s.graphToViewport(centre));
+  const frame = frameArea(
+    area,
+    { width, height },
+    options.insets,
+    options.margin,
+    options.minZoom,
+    options.maxZoom,
+  );
+  const target = s.viewportToFramedGraph(
+    s.graphToViewport(flipY(frame.centre)),
+  );
+  // Sigma's ratio is the inverse of its zoom.
   const ratio = Math.min(
     MAX_RATIO,
-    Math.max(
-      MIN_RATIO,
-      fitRatio(camera.ratio, zoom, area, { width, height }, margin),
-    ),
+    Math.max(MIN_RATIO, (camera.ratio * zoom) / frame.zoom),
   );
-  void camera.animate(
-    { x: target.x, y: target.y, ratio },
-    { duration: reducedMotion ? 0 : 700, easing: "cubicInOut" },
-  );
+  const state = { x: target.x, y: target.y, ratio };
+  // An animation of no duration does not land where it is asked to.
+  if (reducedMotion) camera.setState(state);
+  else void camera.animate(state, { duration: 700, easing: "cubicInOut" });
+}
+
+/**
+ * Draws the labels on sigma's label layer, after each render: every disc
+ * large enough on screen, in the order labelOrder gives, a label dropped
+ * only where it collides with one drawn before it.
+ */
+function drawLabels(
+  s: Sigma,
+  graph: MapGraph,
+  f: Frame,
+  draw: NodeLabelDrawingFunction,
+) {
+  f.labels.clear();
+  const ctx = s.getCanvases().labels?.getContext("2d");
+  if (!ctx) return;
+  const { width, height } = s.getDimensions();
+  const shown = new Map<string, { x: number; y: number; size: number }>();
+  const candidates: LabelCandidate[] = [];
+  graph.forEachNode((key, a) => {
+    if (!a.label || (f.levelWeights[a.level] ?? 0) <= 0) return;
+    const d = s.getNodeDisplayData(key);
+    if (!d) return;
+    const p = s.framedGraphToViewport(d);
+    const size = s.scaleSize(d.size);
+    shown.set(key, { x: p.x, y: p.y, size });
+    candidates.push({
+      key,
+      level: a.level,
+      x: p.x,
+      y: p.y,
+      radiusPx: Math.max(size, f.minRadiusPx),
+      labelFirst: a.labelFirst,
+      forceLabel: a.forceLabel,
+    });
+  });
+  const settings = s.getSettings();
+  for (const key of labelOrder(candidates, {
+    width,
+    height,
+    levelInView: f.pickLevel,
+  })) {
+    draw(
+      ctx,
+      { ...graph.getNodeAttributes(key), ...shown.get(key)!, key },
+      settings,
+    );
+  }
 }

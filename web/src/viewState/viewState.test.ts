@@ -324,6 +324,22 @@ describe("what the view asks the server", () => {
     ).toEqual(["packages", "directories"]);
   });
 
+  it("asks every level it can hold whole while searching, to find matches in it", () => {
+    const levels = (data: MapData) =>
+      computeView(data, at(FAR, { search: "probe" })).requests.maps.map(
+        (m) => m.level,
+      );
+
+    expect(levels({ levels: { packages }, comparison: null })).toEqual([
+      "packages",
+      "directories",
+    ]);
+    expect(
+      levels({ levels: { packages, directories }, comparison: null }),
+    ).toEqual(["packages", "directories", "files"]);
+    expect(computeView(loaded, at(FAR)).requests.maps).toHaveLength(1);
+  });
+
   it("asks a big level for the viewport only, in steps a small pan does not change", () => {
     const big: MapData = {
       levels: {

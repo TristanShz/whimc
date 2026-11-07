@@ -4,8 +4,10 @@ import {
   cameraFrom,
   diveArea,
   dotGrid,
-  fitRatio,
   flipY,
+  frameArea,
+  insetsFrom,
+  NO_INSETS,
 } from "./camera";
 
 describe("coordinates", () => {
@@ -47,37 +49,15 @@ describe("fitting", () => {
     expect(boundsOf([])).toBeNull();
   });
 
-  it("finds the camera ratio that fits an area on screen, with a margin", () => {
-    // At zoom 2, an area 100 wide spans 200 px of an 800 px wide screen: it
-    // can grow 4 times, so the ratio shrinks 4 times (and a bit for the margin).
-    const r = fitRatio(
-      1,
-      2,
-      { x0: 0, y0: 0, x1: 100, y1: 50 },
-      { width: 800, height: 800 },
-      1,
-    );
-    expect(r).toBeCloseTo(0.25);
-    expect(
-      fitRatio(
-        1,
-        2,
-        { x0: 0, y0: 0, x1: 100, y1: 50 },
-        { width: 800, height: 800 },
-        0.8,
-      ),
-    ).toBeCloseTo(0.25 / 0.8);
-  });
-
   it("fits the tighter of the two dimensions", () => {
-    const r = fitRatio(
-      1,
-      1,
+    const f = frameArea(
       { x0: 0, y0: 0, x1: 100, y1: 100 },
       { width: 1000, height: 200 },
+      NO_INSETS,
       1,
     );
-    expect(r).toBeCloseTo(0.5);
+    expect(f.zoom).toBe(2);
+    expect(f.centre).toEqual({ x: 50, y: 50 });
   });
 });
 
@@ -112,5 +92,53 @@ describe("diving into a Module", () => {
     // 10000 children of radius 0.8: the zoom must reach 30 / 0.8 = 37.5.
     const a = diveArea({ x: 0, y: 0, radius: 100, children: 10000 }, 700, 30);
     expect((0.7 * 700) / (a.x1 - a.x0)).toBeCloseTo(37.5);
+  });
+});
+
+describe("framing around the panels", () => {
+  const screen = { width: 1000, height: 800 };
+
+  it("pushes in the edge each panel hugs", () => {
+    const insets = insetsFrom(screen, [
+      { x0: 16, y0: 16, x1: 560, y1: 60 }, // toolbar
+      { x0: 16, y0: 16, x1: 560, y1: 110 }, // toolbar and Changes bar
+      { x0: 664, y0: 70, x1: 984, y1: 700 }, // details
+      { x0: 16, y0: 740, x1: 110, y1: 784 }, // legend, collapsed
+    ]);
+    expect(insets).toEqual({ top: 110, right: 336, bottom: 60, left: 0 });
+  });
+
+  it("never lets the panels take the whole screen", () => {
+    const insets = insetsFrom(screen, [{ x0: 0, y0: 0, x1: 1000, y1: 790 }]);
+    expect(insets.top).toBe(800 * 0.45);
+  });
+
+  it("ignores panels that are not shown", () => {
+    expect(insetsFrom(screen, [{ x0: 0, y0: 0, x1: 0, y1: 0 }])).toEqual(
+      NO_INSETS,
+    );
+  });
+
+  it("centres the area in the clear part of the screen", () => {
+    const area = { x0: 0, y0: 0, x1: 100, y1: 100 };
+    const insets = { top: 100, right: 0, bottom: 0, left: 0 };
+    const f = frameArea(area, screen, insets, 1);
+    // 700 px of height left for 100 units.
+    expect(f.zoom).toBe(7);
+    // The screen centre (y 400) sits 50 px above the clear centre (y 450).
+    expect(f.centre.x).toBe(50);
+    expect(f.centre.y).toBeCloseTo(50 - 50 / 7);
+  });
+
+  it("goes no farther than the zoom asked for", () => {
+    const area = { x0: 0, y0: 0, x1: 1000, y1: 1000 };
+    expect(frameArea(area, screen, NO_INSETS, 1, 3).zoom).toBe(3);
+    expect(frameArea(area, screen, NO_INSETS, 1, 0).zoom).toBe(0.8);
+  });
+
+  it("goes no closer than the zoom allowed, unless the minimum asks to", () => {
+    const area = { x0: 0, y0: 0, x1: 10, y1: 10 };
+    expect(frameArea(area, screen, NO_INSETS, 1, 0, 5).zoom).toBe(5);
+    expect(frameArea(area, screen, NO_INSETS, 1, 8, 5).zoom).toBe(8);
   });
 });

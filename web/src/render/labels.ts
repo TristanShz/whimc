@@ -33,14 +33,16 @@ function font(d: LabelData, radiusPx: number): { css: string; size: number } {
 }
 
 /**
- * Draws a centred label with a halo, unless another label already holds its
- * place this frame; a forced label (focus, selection, search) always draws.
+ * Draws a centred label with a halo at the first of its places (baselines)
+ * no label drawn before it holds this frame; a label with no free place is
+ * left out, unless forced (focus, selection, search): it then takes its
+ * first place.
  */
 function haloText(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
-  y: number,
+  places: number[],
   frame: Frame,
   color: Rgb,
   alpha: number,
@@ -48,13 +50,17 @@ function haloText(
   forced: boolean,
 ) {
   const w = ctx.measureText(text).width;
-  const box = {
+  const box = (y: number) => ({
     x0: x - w / 2,
     y0: y - size,
     x1: x + w / 2,
     y1: y + size * 0.3,
-  };
-  if (!frame.labels.claim(box) && !forced) return;
+  });
+  let y = places.find((p) => frame.labels.claim(box(p)));
+  if (y === undefined) {
+    if (!forced) return;
+    y = places[0]!;
+  }
   ctx.lineJoin = "round";
   ctx.lineWidth = 3.5;
   ctx.strokeStyle = rgba(frame.palette.halo, Math.min(1, alpha * 0.9));
@@ -118,7 +124,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
           ctx,
           d.label,
           d.x,
-          d.y + f.size / 3,
+          [d.y + f.size / 3],
           frame,
           p.label,
           alpha,
@@ -130,7 +136,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
           ctx,
           d.label,
           d.x,
-          d.y + r + f.size + 3,
+          [d.y + r + f.size + 3, d.y - r - 6],
           frame,
           p.label,
           alpha,
@@ -142,7 +148,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
           ctx,
           d.label,
           d.x,
-          d.y - r - 8,
+          [d.y - r - 8],
           frame,
           p.muted,
           alpha,
@@ -156,7 +162,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
       ctx,
       d.label,
       d.x,
-      d.y + r + f.size + 3,
+      [d.y + r + f.size + 3, d.y - r - 6],
       frame,
       p.label,
       alpha,

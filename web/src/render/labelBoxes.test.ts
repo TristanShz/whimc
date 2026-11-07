@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LabelBoxes } from "./labelBoxes";
+import { LabelBoxes, labelOrder, type LabelCandidate } from "./labelBoxes";
 
 describe("label boxes", () => {
   it("lets the first label have its place and turns away one overlapping it", () => {
@@ -21,5 +21,47 @@ describe("label boxes", () => {
     boxes.claim({ x0: 0, y0: 0, x1: 100, y1: 12 });
     boxes.clear();
     expect(boxes.claim({ x0: 0, y0: 0, x1: 100, y1: 12 })).toBe(true);
+  });
+});
+
+describe("which labels to draw, in which order", () => {
+  const screen = { width: 800, height: 600, levelInView: 0 };
+  const c = (
+    key: string,
+    radiusPx: number,
+    extra: Partial<LabelCandidate> = {},
+  ): LabelCandidate => ({
+    key,
+    level: 0,
+    x: 400,
+    y: 300,
+    radiusPx,
+    labelFirst: false,
+    forceLabel: false,
+    ...extra,
+  });
+
+  it("labels every disc large enough on screen, biggest first", () => {
+    expect(
+      labelOrder([c("mid", 40), c("tiny", 4), c("big", 200)], screen),
+    ).toEqual(["big", "mid"]);
+  });
+
+  it("puts the forced labels first, then the level in view", () => {
+    expect(
+      labelOrder(
+        [
+          c("big", 200),
+          c("file", 12, { level: 2 }),
+          c("badged", 5, { forceLabel: true }),
+          c("selected", 3, { labelFirst: true }),
+        ],
+        { ...screen, levelInView: 2 },
+      ),
+    ).toEqual(["selected", "badged", "file", "big"]);
+  });
+
+  it("leaves out discs far off screen", () => {
+    expect(labelOrder([c("off", 20, { x: -500 })], screen)).toEqual([]);
   });
 });

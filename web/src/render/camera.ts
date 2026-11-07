@@ -46,24 +46,6 @@ export function boundsOf(
   return { x0, y0, x1, y1 };
 }
 
-/**
- * The camera ratio at which `area` fills `margin` of the screen, given the
- * current ratio and zoom (screen pixels per map unit). Sigma's ratio is the
- * inverse of its zoom, so it scales with the area's size on screen.
- */
-export function fitRatio(
-  ratio: number,
-  zoom: number,
-  area: Rect,
-  screen: Size,
-  margin = 0.85,
-): number {
-  const w = Math.max((area.x1 - area.x0) * zoom, 1e-9);
-  const h = Math.max((area.y1 - area.y0) * zoom, 1e-9);
-  const grow = Math.min(screen.width / w, screen.height / h) * margin;
-  return ratio / grow;
-}
-
 const GRID_BASE_PX = 24;
 
 /**
@@ -99,4 +81,77 @@ export function diveArea(
   );
   const half = (margin * screenMin) / (2 * zoom);
   return { x0: m.x - half, y0: m.y - half, x1: m.x + half, y1: m.y + half };
+}
+
+/** Screen pixels kept clear along each edge, for the panels over the Map. */
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const NO_INSETS: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/** No inset takes more than this share of the screen's width or height. */
+const MAX_INSET_SHARE = 0.45;
+
+/**
+ * The insets that keep the panels over the Map clear: each panel pushes in
+ * the edge it hugs, the one it takes the least to clear (the toolbar the
+ * top, the details panel the right, the legend the bottom).
+ */
+export function insetsFrom(screen: Size, panels: readonly Rect[]): Insets {
+  const out = { ...NO_INSETS };
+  for (const p of panels) {
+    if (p.x1 <= p.x0 || p.y1 <= p.y0) continue;
+    const options: [keyof Insets, number][] = [
+      ["top", p.y1],
+      ["right", screen.width - p.x0],
+      ["bottom", screen.height - p.y0],
+      ["left", p.x1],
+    ];
+    const [edge, inset] = options.reduce((a, b) => (b[1] < a[1] ? b : a));
+    out[edge] = Math.max(out[edge], inset);
+  }
+  const cap = (v: number, size: number) =>
+    Math.max(0, Math.min(v, size * MAX_INSET_SHARE));
+  return {
+    top: cap(out.top, screen.height),
+    right: cap(out.right, screen.width),
+    bottom: cap(out.bottom, screen.height),
+    left: cap(out.left, screen.width),
+  };
+}
+
+/**
+ * Where to put the camera to show an area in the part of the screen the
+ * insets leave clear, filling `margin` of it, within `minZoom` and
+ * `maxZoom` (screen pixels per map unit; the closest wins): the zoom, and the map point at the centre of
+ * the screen.
+ */
+export function frameArea(
+  area: Rect,
+  screen: Size,
+  insets: Insets = NO_INSETS,
+  margin = 0.85,
+  minZoom = 0,
+  maxZoom = Infinity,
+): { zoom: number; centre: Point } {
+  const free = {
+    width: Math.max(1, screen.width - insets.left - insets.right),
+    height: Math.max(1, screen.height - insets.top - insets.bottom),
+  };
+  const w = Math.max(area.x1 - area.x0, 1e-9);
+  const h = Math.max(area.y1 - area.y0, 1e-9);
+  const fit = Math.min(free.width / w, free.height / h) * margin;
+  const zoom = Math.max(minZoom, Math.min(maxZoom, fit));
+  // The area's centre goes to the centre of the clear part of the screen.
+  return {
+    zoom,
+    centre: {
+      x: (area.x0 + area.x1) / 2 + (insets.right - insets.left) / (2 * zoom),
+      y: (area.y0 + area.y1) / 2 + (insets.bottom - insets.top) / (2 * zoom),
+    },
+  };
 }

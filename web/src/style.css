@@ -146,6 +146,8 @@ code {
 .map-canvas {
   position: absolute;
   inset: 0;
+  /* Its own stacking context: its layers stay under the panels. */
+  z-index: 0;
   background:
     radial-gradient(circle at 1px 1px, var(--grid) 1px, transparent 1.4px)
       var(--grid-x, 0) var(--grid-y, 0) / var(--grid-size, 24px)
@@ -538,7 +540,7 @@ code {
 }
 
 .legend-changes .legend-deps {
-  display: block;
+  flex-basis: 100%;
 }
 
 .legend-focus {

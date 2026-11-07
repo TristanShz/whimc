@@ -7,7 +7,10 @@ coverage.*
 
 # Web UI
 node_modules/
-web/dist/
+# web/dist/ is built; only its placeholder is kept so that go:embed works
+# without a web build.
+web/dist/*
+!web/dist/.gitkeep
 .vite/
 
 # Editors and OS

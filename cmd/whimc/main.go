@@ -12,9 +12,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"text/tabwriter"
-
-	"github.com/TristanShz/whimc/engine"
+	"syscall"
 )
 
 const usage = `Usage:
@@ -31,15 +29,21 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run executes the command line args and returns the process exit code.
+// run executes the command line args until done or interrupted, and returns
+// the process exit code.
 func run(args []string, stdout, stderr io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runContext(ctx, args, stdout, stderr)
+}
+
+// runContext executes the command line args until done or until ctx ends,
+// and returns the process exit code.
+func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	var err error
 	switch args[0] {
 	case "serve":
@@ -93,34 +97,4 @@ func parse(fs *flag.FlagSet, args []string) (string, error) {
 		return "", errUsage
 	}
 	return repoPath(fs)
-}
-
-func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	fs := newFlagSet("serve", stderr)
-	fs.Int("port", 7777, "port to listen on, on 127.0.0.1")
-	fs.Bool("no-open", false, "do not open the browser")
-	path, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	ws, err := engine.Open(ctx, path, engine.Options{})
-	if err != nil {
-		return err
-	}
-	defer ws.Close()
-
-	view, err := ws.Map(ctx, engine.State{}, engine.MapQuery{Level: engine.Packages})
-	if err != nil {
-		return err
-	}
-	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "PACKAGE\tPATH\tDIRECTORIES\tSIZE")
-	for _, m := range view.Modules {
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", m.Name, m.Path, m.Children, m.Size)
-	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	fmt.Fprintln(stdout, "\nThe Map server is not built yet: this only lists the Packages.")
-	return nil
 }

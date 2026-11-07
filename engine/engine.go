@@ -22,6 +22,8 @@ var (
 	ErrGitNotFound = gitrepo.ErrGitNotFound
 	// ErrNotARepository reports that the path given to Open is not inside a git work tree.
 	ErrNotARepository = gitrepo.ErrNotARepository
+	// ErrUnknownRef reports a State whose ref names no commit, branch or tag.
+	ErrUnknownRef = gitrepo.ErrUnknownRef
 	// ErrNotImplemented reports a part of the engine that is not built yet.
 	ErrNotImplemented = errors.New("not implemented yet")
 )
@@ -130,11 +132,11 @@ type MapQuery struct {
 
 // MapView is the answer to a Map call.
 type MapView struct {
-	Level   Level
-	Modules []Module
+	Level   Level    `json:"level"`
+	Modules []Module `json:"modules"`
 	// Dependencies are the Dependencies between the Modules of the view,
 	// aggregated to its level, sorted by From then To.
-	Dependencies []Dependency
+	Dependencies []Dependency `json:"dependencies"`
 }
 
 // DependencyKind is how a Dependency is imported.
@@ -176,46 +178,53 @@ func (k *DependencyKind) UnmarshalText(text []byte) error {
 }
 
 // KindCounts counts the File Dependencies of an aggregate by kind.
-type KindCounts struct{ Runtime, TypeOnly, Dynamic int }
+type KindCounts struct {
+	Runtime  int `json:"runtime"`
+	TypeOnly int `json:"typeOnly"`
+	Dynamic  int `json:"dynamic"`
+}
 
 // Dependency is an edge of the Map: From imports what To defines. Between
 // Files, it stands for every import of one File resolving to the other;
 // between Directories or Packages, it aggregates the File Dependencies from
 // one Module's Files to the other's.
 type Dependency struct {
-	From, To string // Module IDs
+	From string `json:"from"` // Module IDs
+	To   string `json:"to"`
 	// Kind is runtime if any aggregated File Dependency is runtime, else
 	// type-only if any is, else dynamic.
-	Kind DependencyKind
+	Kind DependencyKind `json:"kind"`
 	// Weight is the number of File Dependencies aggregated: 1 between Files.
-	Weight int
-	Counts KindCounts
+	Weight int        `json:"weight"`
+	Counts KindCounts `json:"counts"`
 }
 
 // Module is a node of the Map: a Package, a Directory or a File.
 type Module struct {
 	// ID is unique across levels: `pkg:<path>`, `dir:<path>` or `file:<path>`.
-	ID    string
-	Level Level
-	Name  string
+	ID    string `json:"id"`
+	Level Level  `json:"level"`
+	Name  string `json:"name"`
 	// Path is the repository-relative slash path; "." is the repository root.
-	Path string
+	Path string `json:"path"`
 	// Parent is the ID of the enclosing Module, empty for a Package.
-	Parent string
+	Parent string `json:"parent,omitempty"`
 	// Size is the number of non-blank lines, summed over the Module's Files.
-	Size int
+	Size int `json:"size"`
 	// Churn is the number of commits that touched the Module within the
 	// Churn window, renames followed. For a Directory or a Package, a commit
 	// touching several of its Files counts once.
-	Churn int
+	Churn int `json:"churn"`
 	// Children is the number of Modules one level down.
-	Children int
+	Children int `json:"children"`
 	// Test is set on test Files.
-	Test bool
+	Test bool `json:"test,omitempty"`
 	// X and Y are the Module's frozen position on the Map, in map
 	// coordinates shared by every level: a child sits inside its parent's
 	// disc. Radius is the radius of its disc, from its Size (see Radius).
-	X, Y, Radius float64
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Radius float64 `json:"radius"`
 }
 
 // Update is a change of the index pushed by Changes.
@@ -283,7 +292,7 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 		return MapView{}, fmt.Errorf("map: layout: %w", err)
 	}
 	mq := modules.Query{Level: modules.Level(q.Level), Within: q.Within, Tests: q.Tests}
-	view := MapView{Level: q.Level, Modules: []Module{}}
+	view := MapView{Level: q.Level, Modules: []Module{}, Dependencies: []Dependency{}}
 	var nodes []modules.Node
 	for _, n := range snap.tree.Nodes(mq) {
 		p, _ := w.position(n.ID)

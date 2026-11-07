@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/TristanShz/whimc/internal/testrepo"
 )
 
 func TestServeOutsideARepositoryPrintsTheErrorAndFails(t *testing.T) {
@@ -30,26 +28,6 @@ func TestCompareWithoutGitPrintsTheErrorAndFails(t *testing.T) {
 
 	if code == 0 || !strings.Contains(stderr.String(), "git was not found") {
 		t.Fatalf("exit code = %d, stderr = %q, want a non-zero exit and the git-not-found error", code, stderr.String())
-	}
-}
-
-func TestServeListsThePackagesOfTheRepository(t *testing.T) {
-	isolateUserCache(t)
-	r := testrepo.New(t)
-	r.WriteFiles(map[string]string{
-		"go.mod":  "module example.com/shop\n",
-		"main.go": "package main\n\nfunc main() {}\n",
-	})
-	r.Commit("initial")
-	var stdout, stderr bytes.Buffer
-
-	code := run([]string{"serve", "--no-open", r.Dir}, &stdout, &stderr)
-
-	if code != 0 {
-		t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "example.com/shop") {
-		t.Errorf("stdout = %q, want the Package listed", stdout.String())
 	}
 }
 

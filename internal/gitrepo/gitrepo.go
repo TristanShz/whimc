@@ -29,6 +29,8 @@ var (
 	ErrGitNotFound = errors.New("git was not found on PATH: install git (https://git-scm.com/downloads) and make sure the `git` command runs in your shell")
 	// ErrNotARepository reports that a path is not inside a git work tree.
 	ErrNotARepository = errors.New("not inside a git repository")
+	// ErrUnknownRef reports a ref that names no commit, branch or tag.
+	ErrUnknownRef = errors.New("unknown ref")
 )
 
 // Entry is a regular File of a repository State: its repository-relative
@@ -92,7 +94,7 @@ func (r *Repo) CommonDir(ctx context.Context) (string, error) {
 func (r *Repo) ResolveCommit(ctx context.Context, ref string) (string, error) {
 	out, err := r.run(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")
 	if err != nil {
-		return "", fmt.Errorf("unknown ref %q: not a commit, branch or tag of %s", ref, r.root)
+		return "", fmt.Errorf("%w %q: not a commit, branch or tag of %s", ErrUnknownRef, ref, r.root)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

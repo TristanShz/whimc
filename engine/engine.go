@@ -41,6 +41,9 @@ type Workspace interface {
 	Compare(ctx context.Context, base, target State, q CompareQuery) (Comparison, error)
 	// Changes streams index updates (first run progress, working-tree edits).
 	Changes(ctx context.Context) (<-chan Update, error)
+	// Refs lists the branches, tags and recent commits a Comparison can
+	// pick.
+	Refs(ctx context.Context) (Refs, error)
 	// Stats reports the work the Workspace did since it was opened.
 	Stats() Stats
 	// Close releases the git processes and the index held by the Workspace.

@@ -128,6 +128,34 @@ describe("node attributes", () => {
     });
   });
 
+  it("badges a changed Directory or Package with its changed-File count, not a File", () => {
+    const dir = nodeAttributes(
+      node({ change: "modified", changedFiles: 1240 }),
+      palette,
+    );
+    expect(dir).toMatchObject({
+      badge: "1,240",
+      forceLabel: true,
+      labelFirst: false,
+    });
+    expect(dir.badgeColor).toBe(toCss(palette.modified));
+    const added = nodeAttributes(
+      node({ change: "added", changedFiles: 2 }),
+      palette,
+    );
+    expect(added.badgeColor).toBe(toCss(palette.added));
+    expect(
+      nodeAttributes(
+        node({ level: "files", change: "modified", changedFiles: 1 }),
+        palette,
+      ).badge,
+    ).toBe("");
+    expect(nodeAttributes(node(), palette)).toMatchObject({
+      badge: "",
+      forceLabel: false,
+    });
+  });
+
   it("draws a ghost hollow, without glow, behind the living nodes of its level", () => {
     const ghost = nodeAttributes(
       node({ ghost: true, change: "removed", heat: 1 }),

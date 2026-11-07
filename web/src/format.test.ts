@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatCount, measures, plural, shorten } from "./format";
+import type { Summary } from "./api/types";
+import {
+  changeSummary,
+  compareFailure,
+  formatCount,
+  measures,
+  plural,
+  shorten,
+} from "./format";
 
 describe("format", () => {
   it("groups thousands", () => {
@@ -22,5 +30,54 @@ describe("format", () => {
     expect(s).toHaveLength(20);
     expect(s.startsWith("…")).toBe(true);
     expect(s.endsWith("folder/name")).toBe(true);
+  });
+
+  describe("the summary of a Comparison", () => {
+    const summary: Summary = {
+      filesChanged: 14,
+      filesAdded: 3,
+      filesModified: 10,
+      filesRemoved: 1,
+      packagesTouched: 1,
+      dependenciesAdded: 0,
+      dependenciesRemoved: 0,
+    };
+
+    it("says Files changed, Files added and Packages touched in one line", () => {
+      expect(changeSummary(summary)).toBe(
+        "14 Files changed · 3 added · 1 Package touched",
+      );
+    });
+
+    it("adds the Dependencies added and removed when there are any", () => {
+      expect(
+        changeSummary({
+          ...summary,
+          dependenciesAdded: 4,
+          dependenciesRemoved: 1,
+        }),
+      ).toBe(
+        "14 Files changed · 3 added · 1 Package touched · Dependencies +4 −1",
+      );
+    });
+
+    it("says so when nothing changed", () => {
+      expect(
+        changeSummary({ ...summary, filesChanged: 0, packagesTouched: 0 }),
+      ).toBe("No File changed");
+    });
+  });
+
+  it("names the ref that names nothing when a Comparison fails", () => {
+    expect(
+      compareFailure(
+        'compare: target nope: unknown ref "nope": not a commit, branch or tag of /repo',
+      ),
+    ).toBe(
+      "No commit, branch or tag is named “nope”. Pick one from the list, or type “worktree” for the working tree.",
+    );
+    expect(compareFailure("whimc serve did not answer")).toBe(
+      "Could not compare: whimc serve did not answer",
+    );
   });
 });

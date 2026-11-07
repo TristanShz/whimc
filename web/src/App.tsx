@@ -22,6 +22,7 @@ import { IndexingProgress } from "./ui/IndexingProgress";
 import { LevelIndicator } from "./ui/LevelIndicator";
 import { Legend } from "./ui/Legend";
 import { Toolbar } from "./ui/Toolbar";
+import { ChangesBar, DEFAULT_REFS } from "./ui/ChangesBar";
 import { ZoomControls } from "./ui/ZoomControls";
 import {
   computeView,
@@ -31,6 +32,7 @@ import {
   searchMatches,
   typicalRadii,
   type Camera,
+  type ChangesRefs,
   type Requests,
   type UiState,
 } from "./viewState";
@@ -62,6 +64,9 @@ export function App() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [tests, setTests] = useState(false);
+  // The refs stay picked while the Changes switch is off.
+  const [changesOn, setChangesOn] = useState(false);
+  const [refs, setRefs] = useState<ChangesRefs>(DEFAULT_REFS);
   const [failure, setFailure] = useState<string | null>(null);
 
   const [requests, setRequests] = useState<Requests>({
@@ -78,8 +83,15 @@ export function App() {
   );
 
   const ui: UiState = useMemo(
-    () => ({ camera, search, hovered, selected, tests, changes: null }),
-    [camera, search, hovered, selected, tests],
+    () => ({
+      camera,
+      search,
+      hovered,
+      selected,
+      tests,
+      changes: changesOn ? refs : null,
+    }),
+    [camera, search, hovered, selected, tests, changesOn, refs],
   );
   const view = useMemo(() => computeView(data, ui), [data, ui]);
   useEffect(() => setRequests(view.requests), [view.requests]);
@@ -184,8 +196,13 @@ export function App() {
 
   // A level that failed while the Map is on screen: a toast. The Packages
   // failing before anything is on screen is the whole-Map error below.
+  // With the Changes switch on, a failing Comparison is told in its bar: an
+  // unknown target ref fails the levels too, for the same reason.
   const levelError = LEVELS.find(
-    (l) => errors[l] && (l !== "packages" || packages !== undefined),
+    (l) =>
+      errors[l] &&
+      (l !== "packages" || packages !== undefined) &&
+      !(changesOn && errors.compare),
   );
   const empty = packages !== undefined && packages.modules.length === 0;
 
@@ -206,17 +223,32 @@ export function App() {
         onFailure={setFailure}
       />
 
-      <Toolbar
-        search={search}
-        matches={matches.length}
-        tests={tests}
-        onSearch={setSearch}
-        onSearchSubmit={showMatches}
-        onTests={setTests}
-        searchRef={searchField}
-      />
+      <div className="controls">
+        <Toolbar
+          search={search}
+          matches={matches.length}
+          tests={tests}
+          onSearch={setSearch}
+          onSearchSubmit={showMatches}
+          onTests={setTests}
+          changes={changesOn}
+          onChanges={setChangesOn}
+          searchRef={searchField}
+        />
+        {changesOn && (
+          <ChangesBar
+            api={api}
+            refs={refs}
+            onRefs={setRefs}
+            changes={view.changes}
+            loading={loading.has("compare")}
+            error={errors.compare}
+            revision={live.revision}
+          />
+        )}
+      </div>
       <LevelIndicator level={indicator.level} depth={indicator.depth} />
-      <Legend />
+      <Legend changes={changesOn} />
       <ZoomControls
         onZoomIn={() => map.current?.zoomIn()}
         onZoomOut={() => map.current?.zoomOut()}

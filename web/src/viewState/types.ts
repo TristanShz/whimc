@@ -128,6 +128,15 @@ export interface ViewState {
   /** The Module the highlight is centred on, if it is on the Map. */
   focus: string | null;
   /** The Comparison drawn, for the one-line summary; null when not drawn. */
-  changes: { base: string; target: string; summary: Summary } | null;
+  changes: {
+    base: string;
+    target: string;
+    summary: Summary;
+    /**
+     * Whether it compares the refs the Changes switch asks for; the last one
+     * stays drawn while the one asked for is on its way.
+     */
+    current: boolean;
+  } | null;
   requests: Requests;
 }

@@ -83,12 +83,12 @@ describe("createApi", () => {
 
     const unsubscribe = api.changes((u) => got.push(u));
     sources[0]?.listeners.update?.(
-      new MessageEvent("update", { data: '{"files":1}' }),
+      new MessageEvent("update", { data: '{"kind":"files","paths":["a.ts"]}' }),
     );
     unsubscribe();
 
     expect(sources[0]?.url).toBe("/api/changes");
-    expect(got).toEqual([{ files: 1 }]);
+    expect(got).toEqual([{ kind: "files", paths: ["a.ts"] }]);
     expect(sources[0]?.closed).toBe(true);
   });
 });

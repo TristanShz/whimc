@@ -8,6 +8,7 @@ import type {
   MapView,
   ModuleDetails,
   Rect,
+  Refs,
   Update,
 } from "./types";
 
@@ -89,6 +90,8 @@ export interface Api {
   map(r: MapRequest, signal?: AbortSignal): Promise<MapView>;
   compare(r: CompareRequest, signal?: AbortSignal): Promise<Comparison>;
   module(r: ModuleRequest, signal?: AbortSignal): Promise<ModuleDetails>;
+  /** The branches, tags and recent commits to compare. */
+  refs(signal?: AbortSignal): Promise<Refs>;
   /** Calls onUpdate for each Update until the returned function is called. */
   changes(onUpdate: (u: Update) => void): () => void;
 }
@@ -116,6 +119,7 @@ export function createApi(opts: ApiOptions = {}): Api {
     map: (r, signal) => get(mapUrl(r), signal),
     compare: (r, signal) => get(compareUrl(r), signal),
     module: (r, signal) => get(moduleUrl(r), signal),
+    refs: (signal) => get("/api/refs", signal),
     changes(onUpdate) {
       const Source = opts.EventSource ?? EventSource;
       const source = new Source("/api/changes");

@@ -7,6 +7,9 @@ export interface ToolbarProps {
   /** Modules matching the search among those loaded. */
   matches: number;
   tests: boolean;
+  /** The Changes switch. */
+  changes: boolean;
+  onChanges(on: boolean): void;
   onSearch(q: string): void;
   /** Enter in the search field: bring the matches into view. */
   onSearchSubmit(): void;
@@ -65,6 +68,15 @@ export function Toolbar(p: ToolbarProps) {
       >
         <span className="switch-track" aria-hidden="true" />
         Test Files
+      </button>
+      <button
+        className="switch"
+        aria-pressed={p.changes}
+        aria-controls="changes-bar"
+        onClick={() => p.onChanges(!p.changes)}
+      >
+        <span className="switch-track" aria-hidden="true" />
+        Changes
       </button>
     </header>
   );

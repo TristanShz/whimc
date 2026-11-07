@@ -158,3 +158,23 @@ export interface Update {
   /** The paths a "files" Update is about. */
   paths?: string[];
 }
+
+/** A branch, tag or commit a Comparison can pick (engine.Ref). */
+export interface Ref {
+  /** What the API reads: a branch or tag name, or an abbreviated hash. */
+  name: string;
+  commit: string;
+  subject: string;
+  /** Committer date, Unix seconds. */
+  time: number;
+}
+
+/** The States a Comparison can pick besides the working tree (engine.Refs). */
+export interface Refs {
+  /** The branch HEAD is on, empty when detached. */
+  head: string;
+  branches: Ref[];
+  tags: Ref[];
+  /** The recent commits behind HEAD, newest first. */
+  commits: Ref[];
+}

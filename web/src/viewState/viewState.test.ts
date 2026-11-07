@@ -607,6 +607,22 @@ describe("Changes switch", () => {
       base: "HEAD",
       target: "worktree",
       summary: comparison.summary,
+      current: true,
+    });
+  });
+
+  it("keeps the last Comparison on screen while the one for other refs is on its way, and says so", () => {
+    const view = computeView(
+      withChanges,
+      at(CLOSE, { changes: { base: "main", target: "worktree" } }),
+    );
+
+    expect(view.changes).toMatchObject({ base: "HEAD", current: false });
+    expect(node(view, "file:core/money/cents.ts").change).toBe("modified");
+    expect(view.requests.compare).toEqual({
+      base: "main",
+      target: "worktree",
+      tests: false,
     });
   });
 

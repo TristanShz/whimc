@@ -248,6 +248,10 @@ export function computeView(data: MapData, ui: UiState): ViewState {
           base: comparison.base,
           target: comparison.target,
           summary: comparison.summary,
+          current:
+            !!ui.changes &&
+            comparison.base === ui.changes.base.trim() &&
+            comparison.target === ui.changes.target.trim(),
         }
       : null,
     requests: requests(data, ui, weights),

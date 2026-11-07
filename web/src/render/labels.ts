@@ -63,6 +63,38 @@ function haloText(
   ctx.fillText(text, x, y);
 }
 
+/**
+ * The changed-File count of a changed Directory or Package, on a pill at the
+ * top right of its disc.
+ */
+function drawBadge(
+  ctx: CanvasRenderingContext2D,
+  d: LabelData,
+  r: number,
+  frame: Frame,
+  alpha: number,
+) {
+  const h = 16;
+  ctx.font = `650 10px ${FONTS.sans}`;
+  const w = Math.max(h, ctx.measureText(d.badge).width + 10);
+  const cx = d.x + r * 0.71;
+  const cy = d.y - r * 0.71;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = toCss(frame.palette.halo);
+  ctx.stroke();
+  ctx.fillStyle = d.badgeColor;
+  ctx.fill();
+  ctx.fillStyle = toCss(frame.palette.canvas);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(d.badge, cx, cy + 0.5);
+  ctx.restore();
+}
+
 export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
   return (ctx, data) => {
     const d = data as LabelData;
@@ -70,6 +102,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
     const alpha = labelAlpha(frame, d);
     if (alpha < 0.06) return;
     const r = Math.max(d.size, frame.minRadiusPx);
+    if (d.badge) drawBadge(ctx, d, r, frame, Math.min(1, alpha * 1.4));
     const f = font(d, r);
     ctx.font = f.css;
     ctx.textAlign = "center";
@@ -90,7 +123,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
           p.label,
           alpha,
           f.size,
-          d.forceLabel,
+          d.labelFirst,
         );
       } else if (inView) {
         haloText(
@@ -102,7 +135,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
           p.label,
           alpha,
           f.size,
-          d.forceLabel,
+          d.labelFirst,
         );
       } else {
         haloText(
@@ -114,7 +147,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
           p.muted,
           alpha,
           f.size,
-          d.forceLabel,
+          d.labelFirst,
         );
       }
       return;
@@ -128,7 +161,7 @@ export function createLabelDrawer(frame: Frame): NodeLabelDrawingFunction {
       p.label,
       alpha,
       f.size,
-      d.forceLabel,
+      d.labelFirst,
     );
   };
 }

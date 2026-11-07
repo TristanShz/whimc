@@ -202,6 +202,23 @@ func TestUnknownRefIsABadRequest(t *testing.T) {
 	}
 }
 
+func TestRefsListsWhatTheChangesCanCompare(t *testing.T) {
+	srv, _ := shopServer(t, nil)
+
+	var refs engine.Refs
+	get(t, srv, "/api/refs", http.StatusOK, &refs)
+
+	if len(refs.Branches) != 1 || refs.Branches[0].Name != refs.Head {
+		t.Errorf("branches = %+v, want the branch HEAD is on (%q)", refs.Branches, refs.Head)
+	}
+	if len(refs.Tags) != 1 || refs.Tags[0].Name != "v1" {
+		t.Errorf("tags = %+v, want v1", refs.Tags)
+	}
+	if len(refs.Commits) != 2 || refs.Commits[0].Subject != "edit app" {
+		t.Errorf("commits = %+v, want the two commits, newest first", refs.Commits)
+	}
+}
+
 func TestCompareDefaultsToHeadAgainstTheWorkingTree(t *testing.T) {
 	srv, _ := shopServer(t, nil)
 	var c engine.Comparison

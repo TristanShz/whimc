@@ -1,5 +1,7 @@
 // Numbers and counts as the UI writes them.
 
+import type { Summary } from "./api/types";
+
 const counts = new Intl.NumberFormat("en-US");
 
 export function formatCount(n: number): string {
@@ -9,6 +11,35 @@ export function formatCount(n: number): string {
 /** "1 line", "1,240 lines". */
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${formatCount(n)} ${n === 1 ? one : many}`;
+}
+
+/**
+ * The one-line summary of a Comparison: Files changed, Files added,
+ * Packages touched, then the Dependencies added and removed when any.
+ */
+export function changeSummary(s: Summary): string {
+  if (s.filesChanged === 0) return "No File changed";
+  const parts = [
+    plural(s.filesChanged, "File changed", "Files changed"),
+    `${formatCount(s.filesAdded)} added`,
+    plural(s.packagesTouched, "Package touched", "Packages touched"),
+  ];
+  if (s.dependenciesAdded + s.dependenciesRemoved > 0)
+    parts.push(
+      `Dependencies +${formatCount(s.dependenciesAdded)} −${formatCount(s.dependenciesRemoved)}`,
+    );
+  return parts.join(" · ");
+}
+
+/**
+ * Why a Comparison failed, in the UI's words: a ref that names nothing says
+ * which one; anything else is shown as the server said it.
+ */
+export function compareFailure(message: string): string {
+  const ref = /unknown ref "([^"]*)"/.exec(message)?.[1];
+  if (ref !== undefined)
+    return `No commit, branch or tag is named “${ref}”. Pick one from the list, or type “worktree” for the working tree.`;
+  return `Could not compare: ${message}`;
 }
 
 /** The one-line summary of a Module: its Size and its Churn. */

@@ -3,7 +3,7 @@
 
 import type { Level } from "../api/types";
 import type { EdgeView, NodeView } from "../viewState";
-import { measures, shorten } from "../format";
+import { formatCount, measures, shorten } from "../format";
 import { edgeWidth, glow, heatColor, toCss, type Palette } from "./scales";
 
 export const LEVEL_INDEX: Record<Level, number> = {
@@ -42,7 +42,16 @@ export interface NodeAttributes extends Fade {
   ringColor: string;
   /** 1 for a ghost: drawn as an outline. */
   hollow: number;
+  /** Sigma draws its label whatever the crowd: see labelFirst. */
   forceLabel: boolean;
+  /**
+   * Its label wins over the labels around it (focus, selection, search);
+   * a badged node is drawn for its badge, its label only where it fits.
+   */
+  labelFirst: boolean;
+  /** The changed-File count of a changed Directory or Package, "" for none. */
+  badge: string;
+  badgeColor: string;
   zIndex: number;
 }
 
@@ -104,6 +113,12 @@ export function nodeAttributes(
   else if (n.change === "modified") [ring, ringColor] = [1, p.modified];
   else if (n.match) ring = 1;
   const emphasis = n.focused || n.selected ? 2 : n.highlighted ? 1 : 0;
+  const labelFirst =
+    n.focused || n.selected || (n.match && opts.matchLabels !== false);
+  const badge =
+    n.level !== "files" && !n.ghost && n.changedFiles > 0
+      ? formatCount(n.changedFiles)
+      : "";
   return {
     x: n.x,
     y: -n.y,
@@ -117,8 +132,10 @@ export function nodeAttributes(
     ring,
     ringColor: toCss(ringColor),
     hollow: n.ghost ? 1 : 0,
-    forceLabel:
-      n.focused || n.selected || (n.match && opts.matchLabels !== false),
+    forceLabel: labelFirst || badge !== "",
+    labelFirst,
+    badge,
+    badgeColor: toCss(n.change === "added" ? p.added : p.modified),
     zIndex: level * 4 + (n.ghost ? 0 : 1) + emphasis,
   };
 }

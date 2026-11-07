@@ -413,3 +413,71 @@ func (r *Repo) Changes(ctx context.Context, commits []string) (map[string][]Chan
 	}
 	return result, nil
 }
+
+// Ref is a branch, a tag or a commit, with the commit it points at.
+type Ref struct {
+	Name    string // short name, or the abbreviated hash of a commit
+	Commit  string
+	Subject string
+	Time    int64 // committer date, Unix seconds
+}
+
+// refFormat prints a ref's full name, its commit (peeled for an annotated
+// tag), subject and committer date, NUL-separated.
+const refFormat = "%(refname)%00%(if)%(*objectname)%(then)%(*objectname)%(else)%(objectname)%(end)%00%(if)%(*subject)%(then)%(*subject)%(else)%(subject)%(end)%00%(if)%(*committerdate:unix)%(then)%(*committerdate:unix)%(else)%(committerdate:unix)%(end)"
+
+// Refs lists the branches and the tags, the most recently committed first.
+func (r *Repo) Refs(ctx context.Context) (branches, tags []Ref, err error) {
+	out, err := r.run(ctx, "for-each-ref", "--sort=-committerdate", "--format="+refFormat, "refs/heads", "refs/tags")
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Split(line, "\x00")
+		if len(f) != 4 {
+			continue
+		}
+		t, _ := strconv.ParseInt(f[3], 10, 64)
+		ref := Ref{Commit: f[1], Subject: f[2], Time: t}
+		if name, ok := strings.CutPrefix(f[0], "refs/heads/"); ok {
+			ref.Name = name
+			branches = append(branches, ref)
+		} else if name, ok := strings.CutPrefix(f[0], "refs/tags/"); ok {
+			ref.Name = name
+			tags = append(tags, ref)
+		}
+	}
+	return branches, tags, nil
+}
+
+// RecentCommits returns at most n commits reachable from HEAD, the newest
+// first; none in a repository without commits.
+func (r *Repo) RecentCommits(ctx context.Context, n int) ([]Ref, error) {
+	head, err := r.Head(ctx)
+	if err != nil || head == "" {
+		return nil, err
+	}
+	out, err := r.run(ctx, "log", "-n", strconv.Itoa(n), "--no-show-signature", "--format=%h%x00%H%x00%s%x00%ct", head, "--")
+	if err != nil {
+		return nil, err
+	}
+	var refs []Ref
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Split(line, "\x00")
+		if len(f) != 4 {
+			continue
+		}
+		t, _ := strconv.ParseInt(f[3], 10, 64)
+		refs = append(refs, Ref{Name: f[0], Commit: f[1], Subject: f[2], Time: t})
+	}
+	return refs, nil
+}
+
+// HeadBranch returns the branch HEAD is on, "" when it is detached.
+func (r *Repo) HeadBranch(ctx context.Context) string {
+	out, err := r.run(ctx, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

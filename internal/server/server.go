@@ -38,6 +38,7 @@ const heartbeat = 15 * time.Second
 //	/api/compare?base=&target=&tests=                      a Comparison
 //	/api/module?id=&ref=&tests=                            ModuleDetails
 //	/api/changes                                           the Updates, as SSE
+//	/api/refs                                              the Refs to compare
 //
 // tests defaults to false, ref and target to the working tree, base to HEAD.
 // Requests whose Host is not a loopback name are refused, so that a web page
@@ -49,6 +50,7 @@ func New(ws engine.Workspace, ui fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/compare", s.handleCompare)
 	mux.HandleFunc("GET /api/module", s.handleModule)
 	mux.HandleFunc("GET /api/changes", s.handleChanges)
+	mux.HandleFunc("GET /api/refs", s.handleRefs)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("no API at %s", r.URL.Path))
 	})
@@ -172,6 +174,15 @@ func moving(children []engine.Module) []engine.Module {
 		return cmp.Or(cmp.Compare(b.Churn, a.Churn), strings.Compare(a.ID, b.ID))
 	})
 	return out[:min(len(out), MovingChildren)]
+}
+
+func (s *server) handleRefs(w http.ResponseWriter, r *http.Request) {
+	refs, err := s.ws.Refs(r.Context())
+	if err != nil {
+		writeEngineError(w, err)
+		return
+	}
+	writeJSON(w, refs)
 }
 
 func (s *server) handleChanges(w http.ResponseWriter, r *http.Request) {

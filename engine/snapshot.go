@@ -89,7 +89,7 @@ func (s *commitSource) read(_, blob string) ([]byte, bool, error) {
 // snapshot is the analysed form of one State.
 type snapshot struct {
 	tree *modules.Tree
-	deps []modules.Edge
+	deps []modules.FileDependency
 	// blobs holds the blob hash of every File of the tree, by path.
 	blobs map[string]string
 	// partial is set when the first run had not reached every Package: the
@@ -246,7 +246,7 @@ func (w *workspace) build(ctx context.Context, src source, commit string, done r
 	}
 	snap.tree = modules.Build(filepath.Base(w.repo.Root()), manifests, files)
 	for _, d := range resolve.Resolve(resolve.Snapshot{Files: parsed, Configs: configs}) {
-		snap.deps = append(snap.deps, modules.Edge{From: d.From, To: d.To, Kind: d.Kind})
+		snap.deps = append(snap.deps, modules.FileDependency{From: d.From, To: d.To, Kind: d.Kind})
 	}
 	return snap, nil
 }

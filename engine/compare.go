@@ -194,14 +194,14 @@ func (w *workspace) Compare(ctx context.Context, base, target State, q CompareQu
 			return Comparison{}, fmt.Errorf("compare: layout: %w", err)
 		}
 	}
-	d := diff{base: bs, target: ts, tests: q.Tests}
-	d.files()
-	d.edges()
+	sc := stateComparison{base: bs, target: ts, tests: q.Tests}
+	sc.files()
+	sc.dependencies()
 	c := Comparison{
 		Base: base, Target: target,
-		Packages:    d.level(w, Packages),
-		Directories: d.level(w, Directories),
-		Files:       d.level(w, Files),
+		Packages:    sc.level(w, Packages),
+		Directories: sc.level(w, Directories),
+		Files:       sc.level(w, Files),
 	}
 	for _, m := range c.Files.Modules {
 		c.Summary.FilesAdded += m.Added
@@ -217,14 +217,14 @@ func (w *workspace) Compare(ctx context.Context, base, target State, q CompareQu
 	return c, nil
 }
 
-// diff compares the snapshots of two States.
-type diff struct {
+// stateComparison compares the snapshots of two States.
+type stateComparison struct {
 	base, target *snapshot
 	tests        bool
 
 	changed []fileChange // sorted by path
-	// addedEdges and removedEdges are the File Dependencies of one State only.
-	addedEdges, removedEdges []modules.Edge
+	// addedDeps and removedDeps are the File Dependencies of one State only.
+	addedDeps, removedDeps []modules.FileDependency
 }
 
 type fileChange struct {
@@ -233,49 +233,50 @@ type fileChange struct {
 }
 
 // keeps reports whether the File at p is part of the Comparison.
-func (d *diff) keeps(p string) bool { return d.tests || !modules.IsTest(p) }
+func (sc *stateComparison) keeps(p string) bool { return sc.tests || !modules.IsTest(p) }
 
 // files finds the Files added, modified and removed.
-func (d *diff) files() {
-	for p, blob := range d.target.blobs {
-		if !d.keeps(p) {
+func (sc *stateComparison) files() {
+	for p, blob := range sc.target.blobs {
+		if !sc.keeps(p) {
 			continue
 		}
-		if was, ok := d.base.blobs[p]; !ok {
-			d.changed = append(d.changed, fileChange{p, Added})
+		if was, ok := sc.base.blobs[p]; !ok {
+			sc.changed = append(sc.changed, fileChange{p, Added})
 		} else if was != blob {
-			d.changed = append(d.changed, fileChange{p, Modified})
+			sc.changed = append(sc.changed, fileChange{p, Modified})
 		}
 	}
-	for p := range d.base.blobs {
-		if _, ok := d.target.blobs[p]; !ok && d.keeps(p) {
-			d.changed = append(d.changed, fileChange{p, Removed})
+	for p := range sc.base.blobs {
+		if _, ok := sc.target.blobs[p]; !ok && sc.keeps(p) {
+			sc.changed = append(sc.changed, fileChange{p, Removed})
 		}
 	}
-	sort.Slice(d.changed, func(i, j int) bool { return d.changed[i].path < d.changed[j].path })
+	sort.Slice(sc.changed, func(i, j int) bool { return sc.changed[i].path < sc.changed[j].path })
 }
 
-// edges finds the File Dependencies added and removed. A File Dependency is
-// identified by the Files it joins; a change of kind adds or removes none.
-func (d *diff) edges() {
-	pairs := func(edges []modules.Edge) map[[2]string]bool {
-		set := make(map[[2]string]bool, len(edges))
-		for _, e := range edges {
-			set[[2]string{e.From, e.To}] = true
+// dependencies finds the File Dependencies added and removed. A File
+// Dependency is identified by the Files it joins; a change of kind adds or
+// removes none.
+func (sc *stateComparison) dependencies() {
+	pairs := func(fileDeps []modules.FileDependency) map[[2]string]bool {
+		set := make(map[[2]string]bool, len(fileDeps))
+		for _, fd := range fileDeps {
+			set[[2]string{fd.From, fd.To}] = true
 		}
 		return set
 	}
-	only := func(edges []modules.Edge, other map[[2]string]bool) []modules.Edge {
-		var out []modules.Edge
-		for _, e := range edges {
-			if !other[[2]string{e.From, e.To}] && d.keeps(e.From) && d.keeps(e.To) {
-				out = append(out, e)
+	only := func(fileDeps []modules.FileDependency, other map[[2]string]bool) []modules.FileDependency {
+		var out []modules.FileDependency
+		for _, fd := range fileDeps {
+			if !other[[2]string{fd.From, fd.To}] && sc.keeps(fd.From) && sc.keeps(fd.To) {
+				out = append(out, fd)
 			}
 		}
 		return out
 	}
-	d.addedEdges = only(d.target.deps, pairs(d.base.deps))
-	d.removedEdges = only(d.base.deps, pairs(d.target.deps))
+	sc.addedDeps = only(sc.target.deps, pairs(sc.base.deps))
+	sc.removedDeps = only(sc.base.deps, pairs(sc.target.deps))
 }
 
 // moduleID returns the ID of the Module of level holding the File at p in
@@ -294,18 +295,18 @@ func moduleID(tree *modules.Tree, level Level, p string) (string, bool) {
 }
 
 // level compares the Modules and Dependencies of one level.
-func (d *diff) level(w *workspace, level Level) LevelComparison {
-	mq := modules.Query{Level: modules.Level(level), Tests: d.tests}
-	baseNodes := d.base.tree.Nodes(mq)
-	targetNodes := d.target.tree.Nodes(mq)
+func (sc *stateComparison) level(w *workspace, level Level) LevelComparison {
+	mq := modules.Query{Level: modules.Level(level), Tests: sc.tests}
+	baseNodes := sc.base.tree.Nodes(mq)
+	targetNodes := sc.target.tree.Nodes(mq)
 	out := LevelComparison{Level: level, Modules: []ModuleChange{}, Dependencies: []DependencyChange{}}
 
 	type counts struct{ added, modified, removed int }
 	inside := map[string]*counts{}
-	for _, fc := range d.changed {
-		tree := d.target.tree
+	for _, fc := range sc.changed {
+		tree := sc.target.tree
 		if fc.change == Removed {
-			tree = d.base.tree
+			tree = sc.base.tree
 		}
 		id, ok := moduleID(tree, level, fc.path)
 		if !ok {
@@ -354,19 +355,19 @@ func (d *diff) level(w *workspace, level Level) LevelComparison {
 		})
 	}
 
-	type edgeCounts struct{ added, removed int }
-	underneath := map[[2]string]*edgeCounts{}
-	tally := func(tree *modules.Tree, edges []modules.Edge, added bool) {
-		for _, e := range edges {
-			from, ok1 := moduleID(tree, level, e.From)
-			to, ok2 := moduleID(tree, level, e.To)
+	type dependencyCounts struct{ added, removed int }
+	underneath := map[[2]string]*dependencyCounts{}
+	tally := func(tree *modules.Tree, fileDeps []modules.FileDependency, added bool) {
+		for _, fd := range fileDeps {
+			from, ok1 := moduleID(tree, level, fd.From)
+			to, ok2 := moduleID(tree, level, fd.To)
 			if !ok1 || !ok2 || from == to {
 				continue
 			}
 			key := [2]string{from, to}
 			c := underneath[key]
 			if c == nil {
-				c = &edgeCounts{}
+				c = &dependencyCounts{}
 				underneath[key] = c
 			}
 			if added {
@@ -376,17 +377,17 @@ func (d *diff) level(w *workspace, level Level) LevelComparison {
 			}
 		}
 	}
-	tally(d.target.tree, d.addedEdges, true)
-	tally(d.base.tree, d.removedEdges, false)
+	tally(sc.target.tree, sc.addedDeps, true)
+	tally(sc.base.tree, sc.removedDeps, false)
 
-	depsBefore := depsByPair(d.base.tree.Dependencies(mq, baseNodes, d.base.deps))
-	depsAfter := depsByPair(d.target.tree.Dependencies(mq, targetNodes, d.target.deps))
+	depsBefore := depsByPair(sc.base.tree.Dependencies(mq, baseNodes, sc.base.deps))
+	depsAfter := depsByPair(sc.target.tree.Dependencies(mq, targetNodes, sc.target.deps))
 	for _, key := range unionKeys(depsBefore, depsAfter, comparePairs) {
 		b, inBase := depsBefore[key]
 		a, inTarget := depsAfter[key]
 		c := underneath[key]
 		if c == nil {
-			c = &edgeCounts{}
+			c = &dependencyCounts{}
 		}
 		var change Change
 		switch {

@@ -6,8 +6,8 @@ import (
 	"github.com/TristanShz/whimc/internal/parse"
 )
 
-// Edge is a File Dependency, between File paths.
-type Edge struct {
+// FileDependency is a Dependency between two Files, given by their paths.
+type FileDependency struct {
 	From, To string
 	Kind     parse.Kind
 }
@@ -30,7 +30,7 @@ type Dependency struct {
 // result of Nodes for the same Query. Only Dependencies between two of nodes
 // are kept, and Dependencies inside one Module are dropped. The result is
 // sorted by From then To.
-func (t *Tree) Dependencies(q Query, nodes []Node, edges []Edge) []Dependency {
+func (t *Tree) Dependencies(q Query, nodes []Node, fileDeps []FileDependency) []Dependency {
 	visible := make(map[string]bool, len(nodes))
 	for _, n := range nodes {
 		visible[n.ID] = true
@@ -56,9 +56,9 @@ func (t *Tree) Dependencies(q Query, nodes []Node, edges []Edge) []Dependency {
 		return id, visible[id]
 	}
 	agg := map[[2]string]*KindCounts{}
-	for _, e := range edges {
-		from, ok1 := moduleOf(e.From)
-		to, ok2 := moduleOf(e.To)
+	for _, fd := range fileDeps {
+		from, ok1 := moduleOf(fd.From)
+		to, ok2 := moduleOf(fd.To)
 		if !ok1 || !ok2 || from == to {
 			continue
 		}
@@ -68,7 +68,7 @@ func (t *Tree) Dependencies(q Query, nodes []Node, edges []Edge) []Dependency {
 			c = &KindCounts{}
 			agg[key] = c
 		}
-		switch e.Kind {
+		switch fd.Kind {
 		case parse.Runtime:
 			c.Runtime++
 		case parse.TypeOnly:

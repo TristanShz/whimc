@@ -44,6 +44,24 @@ _Avoid_: Activity, most modified
 
 ### Change
 
+**State**:
+A state of the codebase: a commit, a branch or a tag, or the working tree as on disk.
+_Avoid_: Version, revision
+
 **Comparison**:
 A pair of codebase states — a base and a target — whose differences are highlighted on the Map. Defaults to HEAD against the working tree, untracked but not ignored files included.
 _Avoid_: Diff (reserved for the line-level text diff)
+
+### Engine
+
+**Workspace**:
+A repository whimc has opened, and the engine's single seam: the command line and the Map ask it for Maps, Comparisons and Updates. Not a set of Packages, which npm and Go call a workspace.
+_Avoid_: Project, repo handle
+
+**Watcher**:
+What follows the working tree while whimc runs: it notices the Files written, created or removed, and HEAD moving, and reports each burst of writes in one Update.
+_Avoid_: Poller, file monitor
+
+**Update**:
+A change of the index pushed to the Map: progress of the first run, Files of the working tree written, or HEAD moved. A Map or a Comparison asked for after it reflects it.
+_Avoid_: Event, notification

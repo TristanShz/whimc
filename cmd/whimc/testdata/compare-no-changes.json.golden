@@ -1,0 +1,28 @@
+{
+  "base": "main",
+  "target": "HEAD",
+  "summary": {
+    "filesChanged": 0,
+    "filesAdded": 0,
+    "filesModified": 0,
+    "filesRemoved": 0,
+    "packagesTouched": 0,
+    "dependenciesAdded": 0,
+    "dependenciesRemoved": 0
+  },
+  "packages": {
+    "level": "packages",
+    "modules": [],
+    "dependencies": []
+  },
+  "directories": {
+    "level": "directories",
+    "modules": [],
+    "dependencies": []
+  },
+  "files": {
+    "level": "files",
+    "modules": [],
+    "dependencies": []
+  }
+}

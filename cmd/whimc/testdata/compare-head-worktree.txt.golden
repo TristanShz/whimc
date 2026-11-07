@@ -1,0 +1,9 @@
+Comparison of HEAD with worktree
+
+2 Files changed: 1 added, 0 modified, 1 removed
+1 Package touched
+Dependencies: 0 added, 0 removed
+
+core (packages/core), modified: 1 added, 0 modified, 1 removed
+  D packages/core/src/legacy.ts
+  A packages/core/src/tax.ts

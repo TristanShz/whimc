@@ -1,0 +1,93 @@
+# GoReleaser configuration for whimc's releases.
+#
+# whimc links tree-sitter through cgo, so it cannot be cross-compiled: each
+# OS/arch is a build id of its own, compiled natively on its own runner (see
+# .github/workflows/release.yml). The release job then runs goreleaser once
+# over the four binaries it downloads, with WHIMC_PREBUILT set: the build's
+# tool becomes scripts/prebuilt-go, which copies each prebuilt binary
+# instead of compiling it, so archives, checksums, the GitHub release and the
+# Homebrew formula all come from one run.
+version: 2
+
+project_name: whimc
+
+before:
+  hooks:
+    # The web UI is embedded with go:embed, so it is built before Go.
+    - make web
+
+builds:
+  - &build
+    id: darwin-arm64
+    main: ./cmd/whimc
+    binary: whimc
+    tool: '{{ if index .Env "WHIMC_PREBUILT" }}./scripts/prebuilt-go{{ else }}go{{ end }}'
+    env:
+      - CGO_ENABLED=1
+      # Without it, clang targets the runner's own macOS version.
+      - MACOSX_DEPLOYMENT_TARGET=12.0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [darwin]
+    goarch: [arm64]
+  - <<: *build
+    id: darwin-amd64
+    goos: [darwin]
+    goarch: [amd64]
+  - <<: *build
+    id: linux-amd64
+    goos: [linux]
+    goarch: [amd64]
+  - <<: *build
+    id: linux-arm64
+    goos: [linux]
+    goarch: [arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: TristanShz
+    name: whimc
+
+# A cask rather than a formula: GoReleaser deprecated brews for prebuilt
+# binaries. `brew install TristanShz/tap/whimc` installs it.
+homebrew_casks:
+  - name: whimc
+    repository:
+      owner: TristanShz
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/TristanShz/whimc
+    description: Index a codebase and draw it as one zoomable Map in the browser
+    license: Apache-2.0
+    commit_author:
+      name: Tristan Shz
+    dependencies:
+      - formula: git
+    hooks:
+      post:
+        # The binaries are not notarized: without this, Gatekeeper refuses
+        # to run a binary downloaded by brew.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/whimc"]
+          end

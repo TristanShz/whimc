@@ -1,0 +1,38 @@
+#!/bin/sh
+# prebuilt-go stands in for the go command in the release's merge job.
+#
+# whimc needs cgo (tree-sitter), so each OS/arch is compiled natively on its
+# own runner and uploaded as a workflow artifact. The merge job then runs one
+# goreleaser release over all four binaries, so that archives, checksums, the
+# GitHub release and the Homebrew formula come from one run. GoReleaser OSS
+# has no prebuilt builder and no --split, so the merge job points the build's
+# gobinary here: "build ... -o <path>" copies the binary compiled for
+# $GOOS/$GOARCH from $WHIMC_PREBUILT/<goos>_<goarch>/whimc to <path>; any
+# other subcommand (version, env, ...) is passed to the real go.
+set -eu
+
+if [ "${1:-}" != "build" ]; then
+	exec go "$@"
+fi
+
+out=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out="$2"; shift 2 ;;
+	-o=*) out="${1#-o=}"; shift ;;
+	*) shift ;;
+	esac
+done
+if [ -z "$out" ]; then
+	echo "prebuilt-go: no -o in the build command" >&2
+	exit 1
+fi
+
+src="${WHIMC_PREBUILT:?WHIMC_PREBUILT must name the directory of prebuilt binaries}/${GOOS}_${GOARCH}/whimc"
+if [ ! -f "$src" ]; then
+	echo "prebuilt-go: no prebuilt binary at $src" >&2
+	exit 1
+fi
+mkdir -p "$(dirname "$out")"
+cp "$src" "$out"
+chmod +x "$out"

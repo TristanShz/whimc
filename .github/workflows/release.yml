@@ -1,0 +1,93 @@
+# Release whimc when a v* tag is pushed.
+#
+# whimc links tree-sitter through cgo, so it is not cross-compiled: the build
+# job compiles each OS/arch natively on its own runner, with goreleaser's
+# build id for that target, and uploads the binary. The release job then runs
+# goreleaser once over the four binaries (WHIMC_PREBUILT makes the build copy
+# them instead of compiling, see scripts/prebuilt-go), which writes the
+# archives, the checksums, the GitHub release and the Homebrew cask.
+# GoReleaser's own --split/--merge would do the same but is a Pro feature.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.id }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { id: darwin-arm64, runner: macos-15, goos: darwin, goarch: arm64 }
+          - { id: darwin-amd64, runner: macos-15-intel, goos: darwin, goarch: amd64 }
+          # Linux binaries link glibc dynamically: the oldest runner image
+          # gives the widest range of distributions they run on.
+          - { id: linux-amd64, runner: ubuntu-22.04, goos: linux, goarch: amd64 }
+          - { id: linux-arm64, runner: ubuntu-22.04-arm, goos: linux, goarch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # Its before hook builds the web UI, which go:embed picks up.
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --clean --id ${{ matrix.id }}
+      - name: Collect the binary
+        run: |
+          mkdir -p "prebuilt/${{ matrix.goos }}_${{ matrix.goarch }}"
+          cp dist/${{ matrix.id }}_*/whimc "prebuilt/${{ matrix.goos }}_${{ matrix.goarch }}/whimc"
+          "prebuilt/${{ matrix.goos }}_${{ matrix.goarch }}/whimc" version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.id }}
+          path: prebuilt
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prebuilt-*
+          path: prebuilt
+          merge-multiple: true
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          # The UI is already inside the prebuilt binaries.
+          args: release --clean --skip=before
+        env:
+          WHIMC_PREBUILT: ${{ github.workspace }}/prebuilt
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

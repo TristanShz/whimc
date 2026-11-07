@@ -1,0 +1,63 @@
+package main
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
+
+func TestServeOutsideARepositoryPrintsTheErrorAndFails(t *testing.T) {
+	dir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"serve", "--no-open", dir}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("exit code = 0, want non-zero")
+	}
+	if !strings.Contains(stderr.String(), "not inside a git repository") || !strings.Contains(stderr.String(), dir) {
+		t.Errorf("stderr = %q, want the not-a-repository error naming %s", stderr.String(), dir)
+	}
+}
+
+func TestCompareWithoutGitPrintsTheErrorAndFails(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"compare", t.TempDir()}, &stdout, &stderr)
+
+	if code == 0 || !strings.Contains(stderr.String(), "git was not found") {
+		t.Fatalf("exit code = %d, stderr = %q, want a non-zero exit and the git-not-found error", code, stderr.String())
+	}
+}
+
+func TestUnknownCommandShowsUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"frobnicate"}, &stdout, &stderr)
+
+	if code != 2 || !strings.Contains(stderr.String(), "Usage") {
+		t.Fatalf("exit code = %d, stderr = %q, want 2 and the usage", code, stderr.String())
+	}
+}
+
+// isolateUserCache points the user cache, where the index goes, at a
+// temporary directory.
+func isolateUserCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", home+"/.cache")
+}
+
+func TestVersionPrintsTheVersionTheReleaseStamped(t *testing.T) {
+	stamped := version
+	version = "1.2.3"
+	t.Cleanup(func() { version = stamped })
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"version"}, &stdout, &stderr)
+
+	if code != 0 || stdout.String() != "whimc 1.2.3\n" {
+		t.Fatalf("exit code = %d, stdout = %q, want 0 and %q", code, stdout.String(), "whimc 1.2.3\n")
+	}
+}

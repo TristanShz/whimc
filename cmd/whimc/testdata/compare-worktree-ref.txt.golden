@@ -1,0 +1,22 @@
+Comparison of main~1 with worktree
+
+5 Files changed: 2 added, 2 modified, 1 removed
+2 Packages touched
+Dependencies: 2 added, 1 removed
+
+core (packages/core), modified: 1 added, 1 modified, 1 removed
+  D packages/core/src/legacy.ts
+  M packages/core/src/money.test.ts (test)
+  A packages/core/src/tax.ts
+
+web (packages/web), modified: 1 added, 1 modified, 0 removed
+  A packages/web/lib/format.ts
+  M packages/web/src/view.ts
+
+Dependencies between Packages
+  A packages/web -> packages/core (runtime)
+
+Dependencies between Files
+  D packages/core/src/money.test.ts -> packages/core/src/money.ts (runtime)
+  A packages/web/lib/format.ts -> packages/core/src/money.ts (runtime)
+  A packages/web/src/view.ts -> packages/web/src/app.ts (runtime)

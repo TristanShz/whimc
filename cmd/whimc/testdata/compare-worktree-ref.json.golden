@@ -1,0 +1,238 @@
+{
+  "base": "main~1",
+  "target": "worktree",
+  "summary": {
+    "filesChanged": 5,
+    "filesAdded": 2,
+    "filesModified": 2,
+    "filesRemoved": 1,
+    "packagesTouched": 2,
+    "dependenciesAdded": 2,
+    "dependenciesRemoved": 1
+  },
+  "packages": {
+    "level": "packages",
+    "modules": [
+      {
+        "id": "pkg:packages/core",
+        "level": "packages",
+        "name": "core",
+        "path": "packages/core",
+        "change": "modified",
+        "changed": 3,
+        "added": 1,
+        "modified": 1,
+        "removed": 1,
+        "size": 4,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "pkg:packages/web",
+        "level": "packages",
+        "name": "web",
+        "path": "packages/web",
+        "change": "modified",
+        "changed": 2,
+        "added": 1,
+        "modified": 1,
+        "removed": 0,
+        "size": 5,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "pkg:packages/web",
+        "to": "pkg:packages/core",
+        "change": "added",
+        "kind": "runtime",
+        "weight": 1,
+        "added": 1,
+        "removed": 0
+      }
+    ]
+  },
+  "directories": {
+    "level": "directories",
+    "modules": [
+      {
+        "id": "dir:packages/core/src",
+        "level": "directories",
+        "name": "src",
+        "path": "packages/core/src",
+        "parent": "pkg:packages/core",
+        "change": "modified",
+        "changed": 3,
+        "added": 1,
+        "modified": 1,
+        "removed": 1,
+        "size": 4,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "dir:packages/web/lib",
+        "level": "directories",
+        "name": "lib",
+        "path": "packages/web/lib",
+        "parent": "pkg:packages/web",
+        "change": "added",
+        "changed": 1,
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "size": 2,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "dir:packages/web/src",
+        "level": "directories",
+        "name": "src",
+        "path": "packages/web/src",
+        "parent": "pkg:packages/web",
+        "change": "modified",
+        "changed": 1,
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "size": 3,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "dir:packages/web/lib",
+        "to": "dir:packages/core/src",
+        "change": "added",
+        "kind": "runtime",
+        "weight": 1,
+        "added": 1,
+        "removed": 0
+      }
+    ]
+  },
+  "files": {
+    "level": "files",
+    "modules": [
+      {
+        "id": "file:packages/core/src/legacy.ts",
+        "level": "files",
+        "name": "legacy.ts",
+        "path": "packages/core/src/legacy.ts",
+        "parent": "dir:packages/core/src",
+        "change": "removed",
+        "changed": 1,
+        "added": 0,
+        "modified": 0,
+        "removed": 1,
+        "size": 1,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "file:packages/core/src/money.test.ts",
+        "level": "files",
+        "name": "money.test.ts",
+        "path": "packages/core/src/money.test.ts",
+        "parent": "dir:packages/core/src",
+        "change": "modified",
+        "test": true,
+        "changed": 1,
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "size": 1,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "file:packages/core/src/tax.ts",
+        "level": "files",
+        "name": "tax.ts",
+        "path": "packages/core/src/tax.ts",
+        "parent": "dir:packages/core/src",
+        "change": "added",
+        "changed": 1,
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "size": 1,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "file:packages/web/lib/format.ts",
+        "level": "files",
+        "name": "format.ts",
+        "path": "packages/web/lib/format.ts",
+        "parent": "dir:packages/web/lib",
+        "change": "added",
+        "changed": 1,
+        "added": 1,
+        "modified": 0,
+        "removed": 0,
+        "size": 2,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      },
+      {
+        "id": "file:packages/web/src/view.ts",
+        "level": "files",
+        "name": "view.ts",
+        "path": "packages/web/src/view.ts",
+        "parent": "dir:packages/web/src",
+        "change": "modified",
+        "changed": 1,
+        "added": 0,
+        "modified": 1,
+        "removed": 0,
+        "size": 2,
+        "x": 0,
+        "y": 0,
+        "radius": 0
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "file:packages/core/src/money.test.ts",
+        "to": "file:packages/core/src/money.ts",
+        "change": "removed",
+        "kind": "runtime",
+        "weight": 1,
+        "added": 0,
+        "removed": 1
+      },
+      {
+        "from": "file:packages/web/lib/format.ts",
+        "to": "file:packages/core/src/money.ts",
+        "change": "added",
+        "kind": "runtime",
+        "weight": 1,
+        "added": 1,
+        "removed": 0
+      },
+      {
+        "from": "file:packages/web/src/view.ts",
+        "to": "file:packages/web/src/app.ts",
+        "change": "added",
+        "kind": "runtime",
+        "weight": 1,
+        "added": 1,
+        "removed": 0
+      }
+    ]
+  }
+}

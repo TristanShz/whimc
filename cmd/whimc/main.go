@@ -1,7 +1,7 @@
 // Command whimc indexes a repository and shows it as one zoomable Map.
 //
 //	whimc serve   [--port N] [--no-open] [path]
-//	whimc compare [--base REF] [--target REF] [--json] [path]
+//	whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
 package main
 
 import (
@@ -19,11 +19,12 @@ import (
 
 const usage = `Usage:
   whimc serve   [--port N] [--no-open] [path]          open the Map of the repository in the browser
-  whimc compare [--base REF] [--target REF] [--json] [path]
+  whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
                                                        print what changed between two States
 
-path defaults to the current directory. REF is a commit, branch or tag; an empty
-target is the working tree.
+path defaults to the current directory. REF is a commit, branch or tag, or
+"worktree" (or empty) for the working tree. compare defaults to HEAD against
+the working tree, untracked Files included; --tests=false leaves test Files out.
 `
 
 func main() {
@@ -121,26 +122,5 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	fmt.Fprintln(stdout, "\nThe Map server is not built yet: this only lists the Packages.")
-	return nil
-}
-
-func compare(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	fs := newFlagSet("compare", stderr)
-	base := fs.String("base", "HEAD", "base State: a commit, branch or tag")
-	target := fs.String("target", "", "target State: a commit, branch or tag; empty is the working tree")
-	fs.Bool("json", false, "print the Comparison as JSON")
-	path, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	ws, err := engine.Open(ctx, path, engine.Options{})
-	if err != nil {
-		return err
-	}
-	defer ws.Close()
-
-	if _, err := ws.Compare(ctx, engine.ParseState(*base), engine.ParseState(*target), engine.CompareQuery{Tests: true}); err != nil {
-		return err
-	}
 	return nil
 }

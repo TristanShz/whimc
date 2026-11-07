@@ -47,6 +47,8 @@ export function boundsOf(
 }
 
 const GRID_BASE_PX = 24;
+/** Dots per major dot along each axis. */
+export const GRID_MAJOR = 4;
 
 /**
  * The background dot grid: its spacing breathes within one octave as the
@@ -56,11 +58,19 @@ const GRID_BASE_PX = 24;
 export function dotGrid(
   zoom: number,
   originPx: Point,
-): { size: number; x: number; y: number } {
+): { size: number; x: number; y: number; majorX: number; majorY: number } {
   const octave = Math.log2(Math.max(zoom, 1e-12));
   const size = GRID_BASE_PX * 2 ** (octave - Math.floor(octave));
-  const mod = (v: number) => ((v % size) + size) % size;
-  return { size, x: mod(originPx.x), y: mod(originPx.y) };
+  const mod = (v: number, m: number) => ((v % m) + m) % m;
+  // Every GRID_MAJOR-th dot is a stronger one, as on a chart.
+  const major = size * GRID_MAJOR;
+  return {
+    size,
+    x: mod(originPx.x, size),
+    y: mod(originPx.y, size),
+    majorX: mod(originPx.x, major),
+    majorY: mod(originPx.y, major),
+  };
 }
 
 /**

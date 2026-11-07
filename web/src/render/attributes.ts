@@ -3,7 +3,7 @@
 
 import type { Level } from "../api/types";
 import type { EdgeView, NodeView } from "../viewState";
-import { formatCount, measures, shorten } from "../format";
+import { formatCount, shorten } from "../format";
 import { edgeWidth, glow, heatColor, toCss, type Palette } from "./scales";
 
 export const LEVEL_INDEX: Record<Level, number> = {
@@ -31,9 +31,14 @@ export interface NodeAttributes extends Fade {
   /** Radius in map units: sizes follow the zoom (itemSizesReference). */
   size: number;
   color: string;
-  label: string;
-  /** The hover line: Size and Churn. */
-  caption: string;
+  /**
+   * Its label. Not sigma's `label`: sigma would index every label in a
+   * grid it never uses here (whimc draws the labels itself).
+   */
+  text: string;
+  /** Size and Churn, for the hover line. */
+  lines: number;
+  commits: number;
   level: number;
   /** 0 to 1: the halo of a Module that moves a lot. */
   glow: number;
@@ -103,6 +108,45 @@ export function retarget(
   return { fade: target, fadeFrom: displayedFade(prev, now), fadeAt: now };
 }
 
+/** The CSS colours of a palette, computed once per palette. */
+interface PaletteCss {
+  focus: string;
+  added: string;
+  modified: string;
+  removed: string;
+  edge: string;
+  /** Heat colours by heat: a level has a few hundred distinct heats. */
+  heat: Map<number, string>;
+}
+
+const paletteCss = new WeakMap<Palette, PaletteCss>();
+
+function css(p: Palette): PaletteCss {
+  let c = paletteCss.get(p);
+  if (!c) {
+    c = {
+      focus: toCss(p.focus),
+      added: toCss(p.added),
+      modified: toCss(p.modified),
+      removed: toCss(p.removed),
+      edge: toCss(p.edge),
+      heat: new Map(),
+    };
+    paletteCss.set(p, c);
+  }
+  return c;
+}
+
+function heatCss(heat: number, p: Palette): string {
+  const cache = css(p).heat;
+  let c = cache.get(heat);
+  if (c === undefined) {
+    c = toCss(heatColor(heat, p));
+    cache.set(heat, c);
+  }
+  return c;
+}
+
 /** A node's attributes, its fade being the target of a transition (see retarget). */
 export function nodeAttributes(
   n: NodeView,
@@ -110,12 +154,13 @@ export function nodeAttributes(
   opts: NodeOptions = {},
 ): Omit<NodeAttributes, "fadeFrom" | "fadeAt"> {
   const level = LEVEL_INDEX[n.level];
+  const c = css(p);
   let ring = 0;
-  let ringColor = p.focus;
+  let ringColor = c.focus;
   if (n.focused || n.selected) ring = 1;
-  else if (n.ghost) [ring, ringColor] = [2, p.removed];
-  else if (n.change === "added") [ring, ringColor] = [2, p.added];
-  else if (n.change === "modified") [ring, ringColor] = [1, p.modified];
+  else if (n.ghost) [ring, ringColor] = [2, c.removed];
+  else if (n.change === "added") [ring, ringColor] = [2, c.added];
+  else if (n.change === "modified") [ring, ringColor] = [1, c.modified];
   else if (n.match) ring = 1;
   const emphasis = n.focused || n.selected ? 2 : n.highlighted ? 1 : 0;
   const labelFirst =
@@ -128,20 +173,21 @@ export function nodeAttributes(
     x: n.x,
     y: -n.y,
     size: n.radius,
-    color: toCss(heatColor(n.heat, p)),
-    label: shorten(n.name),
-    caption: measures(n.size, n.churn),
+    color: heatCss(n.heat, p),
+    text: shorten(n.name),
+    lines: n.size,
+    commits: n.churn,
     level,
     fade: n.levelWeight > 0 ? round(n.fade) : 0,
     glow: n.ghost ? 0 : glow(n.heat),
     ring,
-    ringColor: toCss(ringColor),
+    ringColor,
     hollow: n.ghost ? 1 : 0,
     context: n.fade > 0 ? round(Math.min(1, n.contextFade / n.fade)) : 1,
     forceLabel: labelFirst || badge !== "",
     labelFirst,
     badge,
-    badgeColor: toCss(n.change === "added" ? p.added : p.modified),
+    badgeColor: n.change === "added" ? c.added : c.modified,
     zIndex: level * 4 + (n.ghost ? 0 : 1) + emphasis,
   };
 }
@@ -150,7 +196,7 @@ export function nodeAttributes(
  * How much of an edge shows at full opacity: Dependencies stay quieter than
  * the discs they run over, the heavy ones less so.
  */
-const EDGE_ALPHA = { normal: 0.42, highlighted: 0.95 };
+const EDGE_ALPHA = { normal: 0.5, highlighted: 0.95 };
 
 /** An edge's attributes; levelWeight is its level's share of the blend. */
 export function edgeAttributes(
@@ -162,23 +208,24 @@ export function edgeAttributes(
 ): Omit<EdgeAttributes, "fadeFrom" | "fadeAt"> {
   const level = LEVEL_INDEX[e.level];
   // A change wins over the focus: the Changes legend explains each colour.
+  const c = css(p);
   const color =
     e.change === "added"
-      ? p.added
+      ? c.added
       : e.ghost || e.change === "removed"
-        ? p.removed
+        ? c.removed
         : e.change === "modified"
-          ? p.modified
+          ? c.modified
           : e.highlighted
-            ? p.focus
-            : p.edge;
+            ? c.focus
+            : c.edge;
   // A highlighted crowd thins too, but stays above the rest.
   const base = e.highlighted
     ? EDGE_ALPHA.highlighted * Math.min(1, density * 1.8)
     : EDGE_ALPHA.normal * density * (0.7 + 0.6 * e.strength);
   return {
     size: edgeWidth(e.level, e.strength, e.highlighted),
-    color: toCss(color),
+    color,
     level,
     kind: e.kind === "runtime" ? 0 : e.kind === "type-only" ? 1 : 2,
     // The level weight is the shader's, as for nodes.

@@ -180,15 +180,17 @@ export function fetchArea(v: Rect): Rect {
  * What a camera changes in the view state beyond the level weights (which
  * the renderer blends on its own every frame): the levels drawn, the level
  * in view and the area a big level is fetched for. Two cameras with the same
- * signature give the same nodes, edges and requests.
+ * signature give the same nodes, edges and requests. `viewport` is null
+ * while no level is fetched by area: a pan then changes nothing.
  */
 export function cameraSignature(
   radii: Record<Level, number | null>,
   zoom: number,
-  viewport: Rect,
+  viewport: Rect | null,
 ): string {
   const { level, weights } = levelBlend(radii, zoom);
   const drawn = (Object.keys(weights) as Level[]).filter((l) => weights[l] > 0);
+  if (!viewport) return `${level}|${drawn.join(",")}`;
   const a = fetchArea(viewport);
   return `${level}|${drawn.join(",")}|${a.x0},${a.y0},${a.x1},${a.y1}`;
 }

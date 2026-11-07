@@ -13,9 +13,13 @@ export interface Frame {
   /** The level whose nodes the pointer can hover and click. */
   pickLevel: number;
   minRadiusPx: number;
+  /** 1, or 0 when the user asks for reduced motion: no pulse, no growing. */
+  motion: number;
   palette: Palette;
   /** The labels drawn so far this frame. */
   labels: LabelBoxes;
+  /** Some labels could not be drawn yet this frame: draw another. */
+  labelsPending: boolean;
 }
 
 const t0 = performance.now();
@@ -29,7 +33,9 @@ export function createFrame(palette: Palette): Frame {
     childReveal: [0, 0, 0],
     pickLevel: 0,
     minRadiusPx: MIN_RADIUS_PX,
+    motion: 1,
     palette,
     labels: new LabelBoxes(),
+    labelsPending: false,
   };
 }

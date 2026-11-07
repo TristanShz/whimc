@@ -853,6 +853,17 @@ describe("camera signature", () => {
     expect(sig(FAR, { x0: 5000, y0: 0, x1: 5100, y1: 80 })).not.toBe(sig(FAR));
   });
 
+  it("ignores the viewport while no level is fetched by area", () => {
+    const at = (v: typeof vp) => cameraSignature(radii, FAR, v);
+    expect(cameraSignature(radii, FAR, null)).toBe(
+      cameraSignature(radii, FAR, null),
+    );
+    expect(at({ x0: 5000, y0: 0, x1: 5100, y1: 80 })).not.toBe(at(vp));
+    expect(cameraSignature(radii, FAR, null)).not.toBe(
+      cameraSignature(radii, DIRECTORIES, null),
+    );
+  });
+
   it("agrees with the view state: same signature, same nodes and requests", () => {
     const a = zoomFor(VIEW.revealStartPx * 1.1, DIR_RADIUS);
     const b = zoomFor(VIEW.revealStartPx * 1.3, DIR_RADIUS);

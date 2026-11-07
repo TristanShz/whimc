@@ -4,6 +4,7 @@ import {
   cameraFrom,
   diveArea,
   dotGrid,
+  GRID_MAJOR,
   flipY,
   frameArea,
   insetsFrom,
@@ -76,6 +77,16 @@ describe("dot grid", () => {
     expect(b.x - a.x).toBeCloseTo(5);
     expect(((b.y - a.y + a.size) % a.size) - a.size).toBeCloseTo(-3);
     expect(dotGrid(1, { x: 1000, y: 0 }).x).toBeLessThan(a.size);
+  });
+
+  it("puts a major dot every few dots, on a dot, moving with the Map", () => {
+    const g = dotGrid(1.3, { x: 1000, y: -77 });
+    const major = g.size * GRID_MAJOR;
+    expect(g.majorX).toBeLessThan(major);
+    expect(g.majorY).toBeGreaterThanOrEqual(0);
+    // A major dot sits on a minor one.
+    expect(((g.majorX - g.x) / g.size) % 1).toBeCloseTo(0);
+    expect(((g.majorY - g.y) / g.size) % 1).toBeCloseTo(0);
   });
 });
 

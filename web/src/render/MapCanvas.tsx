@@ -17,8 +17,20 @@ import { LEVEL_INDEX } from "./attributes";
 import { cameraFrom, dotGrid, flipY, frameArea, type Insets } from "./camera";
 import { clock, createFrame, type Frame } from "./frame";
 import { syncGraph, type MapGraph } from "./graphSync";
-import { labelOrder, type LabelCandidate } from "./labelBoxes";
-import { FONTS, createHoverDrawer, createLabelDrawer } from "./labels";
+import {
+  LABEL_MARGIN_PX,
+  LabelIndex,
+  labelOrder,
+  type LabelCandidate,
+} from "./labelBoxes";
+import {
+  FONTS,
+  beginLabels,
+  clearLabelSprites,
+  flushLabels,
+  createHoverDrawer,
+  createLabelDrawer,
+} from "./labels";
 import type { NodeLabelDrawingFunction } from "sigma/rendering";
 import {
   createEdgeProgram,
@@ -69,6 +81,8 @@ export interface MapCanvasProps {
 }
 
 const MAX_RATIO = 8;
+/** The glow's breath is redrawn at about 30 frames a second. */
+const PULSE_FRAME_MS = 33;
 /** The share of the clear screen the whole Map fills when fitted. */
 const FIT_MARGIN = 0.94;
 const MIN_RATIO = 1e-5;
@@ -78,6 +92,7 @@ export function MapCanvas(props: MapCanvasProps) {
   const [sigma, setSigma] = useState<Sigma | null>(null);
   const graph = useRef<MapGraph>(new Graph({ type: "directed" }));
   const frame = useRef<Frame>(createFrame(props.palette));
+  const labelIndex = useRef(new LabelIndex());
   // The latest props for the handlers bound once at mount.
   const latest = useRef(props);
   latest.current = props;
@@ -122,7 +137,11 @@ export function MapCanvas(props: MapCanvasProps) {
       return;
     }
 
-    s.on("afterRender", () => drawLabels(s, graph.current, f, drawLabel));
+    s.on("afterRender", () => {
+      drawLabels(s, graph.current, labelIndex.current, f, drawLabel);
+      // Labels left for the next frame: draw it.
+      if (f.labelsPending) s.scheduleRender();
+    });
     s.on("enterNode", ({ node }) => latest.current.onHover(node));
     s.on("leaveNode", () => latest.current.onHover(null));
     s.on("clickNode", ({ node }) => latest.current.onSelect(node));
@@ -159,6 +178,8 @@ export function MapCanvas(props: MapCanvasProps) {
       el.style.setProperty("--grid-size", `${g.size}px`);
       el.style.setProperty("--grid-x", `${g.x}px`);
       el.style.setProperty("--grid-y", `${g.y}px`);
+      el.style.setProperty("--grid-major-x", `${g.majorX}px`);
+      el.style.setProperty("--grid-major-y", `${g.majorY}px`);
       return cam;
     };
     updateUniforms.current = uniforms;
@@ -184,7 +205,10 @@ export function MapCanvas(props: MapCanvasProps) {
     });
     resize.observe(el);
     // Labels drawn before the fonts arrive would keep the fallback face.
-    void document.fonts?.ready.then(() => s.refresh());
+    void document.fonts?.ready.then(() => {
+      clearLabelSprites();
+      s.refresh();
+    });
 
     setSigma(s);
     return () => {
@@ -233,8 +257,22 @@ export function MapCanvas(props: MapCanvasProps) {
     f.palette = props.palette;
     // New data may change the blend at the same camera.
     updateUniforms.current();
-    const until = syncGraph(graph.current, props.view, props.palette, clock());
-    fadeUntil.current = Math.max(fadeUntil.current, until);
+    const synced = syncGraph(graph.current, props.view, props.palette, clock());
+    // The labels are filed before sigma draws the new graph.
+    labelIndex.current.rebuild(
+      synced.graph.mapNodes((key, a) => ({
+        key,
+        level: a.level,
+        size: a.size,
+        forced: a.labelFirst || a.forceLabel,
+      })),
+    );
+    if (synced.graph !== graph.current) {
+      graph.current = synced.graph;
+      sigma.setGraph(synced.graph);
+    }
+    glowCache.delete(synced.graph);
+    fadeUntil.current = Math.max(fadeUntil.current, synced.until);
     if (fadeLoop.current || fadeUntil.current < clock()) return;
     const tick = () => {
       sigma.scheduleRender();
@@ -245,6 +283,25 @@ export function MapCanvas(props: MapCanvasProps) {
     fadeLoop.current = requestAnimationFrame(tick);
   }, [sigma, props.view, props.palette]);
   useEffect(() => () => cancelAnimationFrame(fadeLoop.current), []);
+
+  // The glow of the Modules that move a lot breathes: a slow redraw, at a
+  // low rate, while some glowing node is drawn and motion is welcome.
+  useEffect(() => {
+    frame.current.motion = props.reducedMotion ? 0 : 1;
+    sigma?.scheduleRender();
+    if (!sigma || props.reducedMotion) return;
+    let last = 0;
+    let raf = 0;
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      if (t - last < PULSE_FRAME_MS || !glowing(graph.current, frame.current))
+        return;
+      last = t;
+      sigma.scheduleRender();
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [sigma, props.reducedMotion]);
 
   useImperativeHandle(
     props.ref,
@@ -277,6 +334,26 @@ export function MapCanvas(props: MapCanvasProps) {
 
   return <div ref={container} className="map-canvas" />;
 }
+
+/** Whether a glowing node of a level drawn is on screen, as far as cheap. */
+function glowing(graph: MapGraph, f: Frame): boolean {
+  const cached = glowCache.get(graph);
+  if (cached !== undefined && cached.weights === f.levelWeights.join())
+    return cached.on;
+  let on = false;
+  graph.forEachNode((_, a) => {
+    if (
+      !on &&
+      a.glow > 0 &&
+      a.fade > 0 &&
+      (f.levelWeights[a.level] ?? 0) > 0.05
+    )
+      on = true;
+  });
+  glowCache.set(graph, { weights: f.levelWeights.join(), on });
+  return on;
+}
+const glowCache = new WeakMap<MapGraph, { weights: string; on: boolean }>();
 
 /** Animates the camera onto an area of the Map. */
 function flyTo(
@@ -320,32 +397,46 @@ function flyTo(
 function drawLabels(
   s: Sigma,
   graph: MapGraph,
+  index: LabelIndex,
   f: Frame,
   draw: NodeLabelDrawingFunction,
 ) {
   f.labels.clear();
+  f.labelsPending = false;
+  beginLabels();
   const ctx = s.getCanvases().labels?.getContext("2d");
   if (!ctx) return;
   const { width, height } = s.getDimensions();
   const shown = new Map<string, { x: number; y: number; size: number }>();
   const candidates: LabelCandidate[] = [];
-  graph.forEachNode((key, a) => {
-    if (!a.label || (f.levelWeights[a.level] ?? 0) <= 0) return;
-    const d = s.getNodeDisplayData(key);
-    if (!d) return;
-    const p = s.framedGraphToViewport(d);
-    const size = s.scaleSize(d.size);
+  // Only the position and the size on screen: anything more per node
+  // (sigma's display data is a copy of every attribute) costs frames.
+  const scale = s.scaleSize(1);
+  for (const key of index.candidates(f.levelWeights, scale)) {
+    if (!graph.hasNode(key)) continue;
+    const a = graph.getNodeAttributes(key);
+    if (!a.text) continue;
+    const p = s.graphToViewport(a);
+    const size = a.size * scale;
+    const radiusPx = Math.max(size, f.minRadiusPx);
+    if (
+      p.x + radiusPx < -LABEL_MARGIN_PX ||
+      p.x - radiusPx > width + LABEL_MARGIN_PX ||
+      p.y + radiusPx < -LABEL_MARGIN_PX ||
+      p.y - radiusPx > height + LABEL_MARGIN_PX
+    )
+      continue;
     shown.set(key, { x: p.x, y: p.y, size });
     candidates.push({
       key,
       level: a.level,
       x: p.x,
       y: p.y,
-      radiusPx: Math.max(size, f.minRadiusPx),
+      radiusPx,
       labelFirst: a.labelFirst,
       forceLabel: a.forceLabel,
     });
-  });
+  }
   const settings = s.getSettings();
   for (const key of labelOrder(candidates, {
     width,
@@ -354,8 +445,9 @@ function drawLabels(
   })) {
     draw(
       ctx,
-      { ...graph.getNodeAttributes(key), ...shown.get(key)!, key },
+      { ...graph.getNodeAttributes(key), ...shown.get(key)!, key, label: null },
       settings,
     );
   }
+  flushLabels(ctx);
 }

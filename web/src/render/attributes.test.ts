@@ -77,8 +77,8 @@ function edge(extra: Partial<EdgeView> = {}): EdgeView {
 describe("node attributes", () => {
   it("places the node at its frozen position, y pointing down as on the engine's map", () => {
     const a = nodeAttributes(node(), palette);
-    expect(a).toMatchObject({ x: 10, y: -20, size: 4, label: "money" });
-    expect(a.caption).toBe("120 lines, 3 commits");
+    expect(a).toMatchObject({ x: 10, y: -20, size: 4, text: "money" });
+    expect(a).toMatchObject({ lines: 120, commits: 3 });
     expect(a.level).toBe(LEVEL_INDEX.directories);
   });
 

@@ -41,8 +41,9 @@ import {
 
 const api = createApi();
 
-/** After the camera stops this long, the view state takes its exact position. */
-const CAMERA_SETTLE_MS = 250;
+/** How long the camera rests before the view follows it to a new fetch area. */
+const CAMERA_REST_MS = 160;
+
 /** How often the level indicator follows a moving camera. */
 const INDICATOR_MS = 60;
 
@@ -96,7 +97,15 @@ export function App() {
     [camera, search, hovered, selected, tests, changesOn, refs],
   );
   const view = useMemo(() => computeView(data, ui), [data, ui]);
-  useEffect(() => setRequests(view.requests), [view.requests]);
+  useEffect(() => {
+    setRequests(view.requests);
+    // A level fetched by area: the camera's area matters to the view.
+    const area = view.requests.maps.some((m) => m.viewport !== undefined);
+    if (area !== byArea.current) {
+      byArea.current = area;
+      signature.current = { levels: "", area: "" };
+    }
+  }, [view.requests]);
 
   const packages = data.levels.packages;
   const bounds = useMemo(() => boundsOf(packages?.modules ?? []), [packages]);
@@ -105,37 +114,49 @@ export function App() {
 
   // The camera moves every frame, and the renderer blends the levels on its
   // own; the view state is computed again only when the camera changes what
-  // it decides (cameraSignature), and once the camera settles.
+  // it decides (cameraSignature): which levels are drawn, and the area a big
+  // level is fetched for, only while one is.
   const [indicator, setIndicator] = useState<{ level: Level; depth: number }>({
     level: "packages",
     depth: 0,
   });
-  const latestCamera = useRef<Camera | null>(null);
-  const signature = useRef("");
-  const settle = useRef<number | undefined>(undefined);
+  const signature = useRef({ levels: "", area: "" });
+  const byArea = useRef(false);
+  const rest = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(rest.current), []);
   const indicatorAt = useRef(0);
   const onCamera = useCallback(
     (c: Camera) => {
-      latestCamera.current = c;
-      const sig = cameraSignature(radii, c.zoom, c.viewport);
-      if (sig !== signature.current) {
-        signature.current = sig;
+      // Which levels are drawn changes the view at once; the area a big
+      // level is fetched for, once the camera rests, so that a zoom or a
+      // pan across it does not recompute the view at every step.
+      const levels = cameraSignature(radii, c.zoom, null);
+      const area = byArea.current
+        ? cameraSignature(radii, c.zoom, c.viewport)
+        : levels;
+      window.clearTimeout(rest.current);
+      if (levels !== signature.current.levels) {
+        signature.current = { levels, area };
         setCamera(c);
+      } else if (area !== signature.current.area) {
+        rest.current = window.setTimeout(() => {
+          signature.current = { levels, area };
+          setCamera(c);
+        }, CAMERA_REST_MS);
       }
-      window.clearTimeout(settle.current);
-      settle.current = window.setTimeout(() => {
-        if (latestCamera.current) setCamera(latestCamera.current);
-      }, CAMERA_SETTLE_MS);
       const now = performance.now();
       if (now - indicatorAt.current > INDICATOR_MS) {
         indicatorAt.current = now;
         const b = levelBlend(radii, c.zoom);
-        setIndicator({ level: b.level, depth: b.depth });
+        setIndicator((i) =>
+          i.level === b.level && Math.abs(i.depth - b.depth) < 0.01
+            ? i
+            : { level: b.level, depth: b.depth },
+        );
       }
     },
     [radii],
   );
-  useEffect(() => () => window.clearTimeout(settle.current), []);
   // Data arriving changes the blend at the same camera.
   useEffect(
     () => setIndicator({ level: view.level, depth: view.depth }),

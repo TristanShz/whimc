@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { LabelBoxes, labelOrder, type LabelCandidate } from "./labelBoxes";
+import {
+  LabelBoxes,
+  LabelIndex,
+  labelOrder,
+  type LabelCandidate,
+} from "./labelBoxes";
 
 describe("label boxes", () => {
   it("lets the first label have its place and turns away one overlapping it", () => {
@@ -14,6 +19,13 @@ describe("label boxes", () => {
     boxes.claim({ x0: 0, y0: 0, x1: 100, y1: 12 });
     expect(boxes.claim({ x0: 101, y0: 0, x1: 150, y1: 12 })).toBe(false);
     expect(boxes.claim({ x0: 101, y0: 0, x1: 150, y1: 12 }, 0)).toBe(true);
+  });
+
+  it("finds a collision across the cells boxes are filed in", () => {
+    const boxes = new LabelBoxes();
+    expect(boxes.claim({ x0: -300, y0: -10, x1: 300, y1: 10 })).toBe(true);
+    expect(boxes.claim({ x0: 250, y0: 5, x1: 260, y1: 15 })).toBe(false);
+    expect(boxes.claim({ x0: 1000, y0: 1000, x1: 1010, y1: 1010 })).toBe(true);
   });
 
   it("starts each frame empty", () => {
@@ -63,5 +75,30 @@ describe("which labels to draw, in which order", () => {
 
   it("leaves out discs far off screen", () => {
     expect(labelOrder([c("off", 20, { x: -500 })], screen)).toEqual([]);
+  });
+});
+
+describe("the label index", () => {
+  const index = new LabelIndex([
+    { key: "big", level: 0, size: 100, forced: false },
+    { key: "small", level: 0, size: 2, forced: false },
+    { key: "mid", level: 0, size: 10, forced: false },
+    { key: "file", level: 2, size: 5, forced: false },
+    { key: "selected", level: 2, size: 0.1, forced: true },
+  ]);
+
+  it("visits only the discs large enough on screen, and the forced ones", () => {
+    // At half a pixel per unit, only "big" reaches the label size.
+    expect(index.candidates([1, 0, 1], 0.5)).toEqual(["selected", "big"]);
+    expect(index.candidates([1, 0, 1], 2)).toEqual([
+      "selected",
+      "big",
+      "mid",
+      "file",
+    ]);
+  });
+
+  it("leaves out the levels not drawn", () => {
+    expect(index.candidates([1, 0, 0], 100)).toEqual(["big", "mid", "small"]);
   });
 });

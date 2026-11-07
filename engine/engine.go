@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,8 +25,6 @@ var (
 	ErrNotARepository = gitrepo.ErrNotARepository
 	// ErrUnknownRef reports a State whose ref names no commit, branch or tag.
 	ErrUnknownRef = gitrepo.ErrUnknownRef
-	// ErrNotImplemented reports a part of the engine that is not built yet.
-	ErrNotImplemented = errors.New("not implemented yet")
 )
 
 // State is a state of the codebase: a commit, branch or tag, or the working
@@ -67,7 +66,13 @@ type Options struct {
 	// CacheDir is where the indexes of repositories are kept, one directory
 	// per repository: whimc's folder in the user cache directory when empty.
 	CacheDir string
+	// Debounce is how long the Watcher waits for a burst of writes to end
+	// before it reports them in one Update: DefaultDebounce when zero.
+	Debounce time.Duration
 }
+
+// DefaultDebounce is the Watcher's quiet time when Options leaves it zero.
+const DefaultDebounce = 250 * time.Millisecond
 
 // DefaultChurnWindow is the Churn window when Options leaves it zero.
 const DefaultChurnWindow = 90 * 24 * time.Hour
@@ -227,9 +232,6 @@ type Module struct {
 	Radius float64 `json:"radius"`
 }
 
-// Update is a change of the index pushed by Changes.
-type Update struct{}
-
 // Open opens the repository containing repoPath.
 func Open(ctx context.Context, repoPath string, opts Options) (Workspace, error) {
 	repo, err := gitrepo.Open(ctx, repoPath)
@@ -247,7 +249,12 @@ func Open(ctx context.Context, repoPath string, opts Options) (Workspace, error)
 		repo.Close()
 		return nil, err
 	}
-	return &workspace{repo: repo, ix: ix, opts: opts}, nil
+	if opts.Debounce <= 0 {
+		opts.Debounce = DefaultDebounce
+	}
+	w := &workspace{repo: repo, ix: ix, opts: opts, hub: newHub()}
+	w.closing, w.stop = context.WithCancel(context.Background())
+	return w, nil
 }
 
 // openIndex opens the index of repo, shared by all its worktrees.
@@ -272,6 +279,16 @@ type workspace struct {
 
 	layout frozenLayout
 
+	// warm is the first run, started with the Watcher by the first call
+	// to Changes; both run until closing ends.
+	warm       firstRun
+	live       sync.Once
+	liveErr    error
+	hub        *hub
+	closing    context.Context
+	stop       context.CancelFunc
+	background sync.WaitGroup
+
 	parsedBlobs   atomic.Int64
 	diffedCommits atomic.Int64
 }
@@ -284,7 +301,7 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 	if q.Level < Packages || q.Level > Files {
 		return MapView{}, fmt.Errorf("map: unknown level %v", q.Level)
 	}
-	snap, err := w.snapshot(ctx, at)
+	snap, err := w.snapshot(ctx, at, w.warm.reached())
 	if err != nil {
 		return MapView{}, fmt.Errorf("map: %w", err)
 	}
@@ -316,8 +333,9 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 	return view, nil
 }
 
-func (w *workspace) Changes(ctx context.Context) (<-chan Update, error) {
-	return nil, fmt.Errorf("changes: %w", ErrNotImplemented)
+func (w *workspace) Close() error {
+	w.stop()
+	w.background.Wait()
+	w.hub.close()
+	return errors.Join(w.repo.Close(), w.ix.Close())
 }
-
-func (w *workspace) Close() error { return errors.Join(w.repo.Close(), w.ix.Close()) }

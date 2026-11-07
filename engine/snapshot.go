@@ -81,11 +81,26 @@ type snapshot struct {
 	deps []modules.Edge
 	// blobs holds the blob hash of every File of the tree, by path.
 	blobs map[string]string
+	// partial is set when the first run had not reached every Package: the
+	// Files of the others have their Size but no Dependencies nor Churn yet.
+	partial bool
+	// unparsed are the Files left unparsed for that reason.
+	unparsed []unparsedFile
 }
 
+// unparsedFile is a File of a partial snapshot the first run has to parse.
+type unparsedFile struct {
+	path string
+	pkg  string // the folder of its Package
+}
+
+// reached tells whether the first run reached the Package at a folder: its
+// Files are parsed and their Churn counted. A nil reached has reached all.
+type reached func(pkg string) bool
+
 // snapshot builds the Module hierarchy of a State and resolves its File
-// Dependencies.
-func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
+// Dependencies, as far as the first run reached (see reached).
+func (w *workspace) snapshot(ctx context.Context, at State, done reached) (*snapshot, error) {
 	src, commit, err := w.sourceOf(ctx, at)
 	if err != nil {
 		return nil, err
@@ -95,6 +110,7 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 		return nil, err
 	}
 	var manifests []modules.Manifest
+	manifestDirs := map[string]bool{}
 	configs := map[string][]byte{}
 	type sourceFile struct {
 		path    string
@@ -126,6 +142,7 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 		configs[p] = content
 		if kind == modules.ManifestFile {
 			manifests = append(manifests, modules.Manifest{Dir: path.Dir(p), Name: modules.ManifestName(p, content)})
+			manifestDirs[path.Dir(p)] = true
 		}
 	}
 
@@ -138,10 +155,12 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 		return nil, fmt.Errorf("index: %w", err)
 	}
 	learnt := map[index.BlobKey]index.Blob{}
-	var files []modules.File
+	snap := &snapshot{blobs: map[string]string{}}
+	var files, churned []modules.File
 	parsed := map[string]parse.Result{}
-	blobs := map[string]string{}
 	for _, sf := range sources {
+		pkg := modules.PackageOf(manifestDirs, sf.path)
+		parseIt := done == nil || done(pkg)
 		b, ok := known[sf.key]
 		if !ok {
 			b, ok = learnt[sf.key]
@@ -158,28 +177,51 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 			}
 			facts := modules.Analyze(content)
 			b = index.Blob{Size: facts.Size, Generated: facts.Generated}
-			if !facts.Generated {
-				r := parse.File(sf.path, content)
-				w.parsedBlobs.Add(1)
-				b.Parse = &r
+			if !facts.Generated && !parseIt {
+				// Only its Size, until the first run reaches its Package.
+				snap.partial = true
+				snap.unparsed = append(snap.unparsed, unparsedFile{path: sf.path, pkg: pkg})
+			} else {
+				if !facts.Generated {
+					r := parse.File(sf.path, content)
+					w.parsedBlobs.Add(1)
+					b.Parse = &r
+				}
+				learnt[sf.key] = b
 			}
-			learnt[sf.key] = b
 		}
-		if b.Generated || b.Parse == nil {
+		if b.Generated {
 			continue
 		}
-		files = append(files, modules.File{Path: sf.path, Size: b.Size, Test: modules.IsTest(sf.path)})
-		parsed[sf.path] = *b.Parse
-		blobs[sf.path] = sf.key.Blob
+		f := modules.File{Path: sf.path, Size: b.Size, Test: modules.IsTest(sf.path)}
+		files = append(files, f)
+		snap.blobs[sf.path] = sf.key.Blob
+		if b.Parse != nil {
+			parsed[sf.path] = *b.Parse
+		}
+		if parseIt {
+			churned = append(churned, f)
+		} else {
+			snap.partial = true
+		}
 	}
 	if err := w.ix.PutBlobs(learnt); err != nil {
 		return nil, fmt.Errorf("index: %w", err)
 	}
 
-	if err := w.attributeChurn(ctx, commit, files); err != nil {
-		return nil, fmt.Errorf("churn: %w", err)
+	if len(churned) > 0 {
+		if err := w.attributeChurn(ctx, commit, churned); err != nil {
+			return nil, fmt.Errorf("churn: %w", err)
+		}
+		commits := make(map[string][]int, len(churned))
+		for _, f := range churned {
+			commits[f.Path] = f.Commits
+		}
+		for i := range files {
+			files[i].Commits = commits[files[i].Path]
+		}
 	}
-	snap := &snapshot{tree: modules.Build(filepath.Base(w.repo.Root()), manifests, files), blobs: blobs}
+	snap.tree = modules.Build(filepath.Base(w.repo.Root()), manifests, files)
 	for _, d := range resolve.Resolve(resolve.Snapshot{Files: parsed, Configs: configs}) {
 		snap.deps = append(snap.deps, modules.Edge{From: d.From, To: d.To, Kind: d.Kind})
 	}

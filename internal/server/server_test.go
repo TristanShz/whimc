@@ -373,7 +373,7 @@ func TestChangesStreamsUpdatesAsServerSentEvents(t *testing.T) {
 	if ct := res.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Fatalf("Content-Type = %q", ct)
 	}
-	updates <- engine.Update{}
+	updates <- engine.Update{Kind: engine.FilesChanged, Paths: []string{"src/a.ts"}}
 	events := bufio.NewReader(res.Body)
 	var lines []string
 	for len(lines) < 2 || lines[len(lines)-1] != "" {
@@ -387,14 +387,14 @@ func TestChangesStreamsUpdatesAsServerSentEvents(t *testing.T) {
 		}
 		lines = append(lines, line)
 	}
-	if got := strings.Join(lines, "|"); got != "event: update|data: {}|" {
+	if got := strings.Join(lines, "|"); got != `event: update|data: {"kind":"files","paths":["src/a.ts"]}|` {
 		t.Errorf("event = %q", got)
 	}
 }
 
-func TestChangesStaysOpenWhileTheEngineHasNoChangesYet(t *testing.T) {
+func TestChangesStreamsTheFirstRunOfARealWorkspace(t *testing.T) {
 	srv, _ := shopServer(t, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/api/changes", nil)
 
@@ -403,11 +403,15 @@ func TestChangesStaysOpenWhileTheEngineHasNoChangesYet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	line, err := bufio.NewReader(res.Body).ReadString('\n')
-
-	if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "text/event-stream" || err != nil || !strings.HasPrefix(line, ":") {
-		t.Errorf("status %d, Content-Type %q, first line %q (%v): want an open stream starting with a comment",
-			res.StatusCode, res.Header.Get("Content-Type"), line, err)
+	events := bufio.NewReader(res.Body)
+	for {
+		line, err := events.ReadString('\n')
+		if err != nil {
+			t.Fatalf("stream ended before the first run did: %v", err)
+		}
+		if strings.HasPrefix(line, "data: ") && strings.Contains(line, `"kind":"indexed"`) {
+			return
+		}
 	}
 }
 

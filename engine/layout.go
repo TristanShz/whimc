@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"runtime"
 	"sort"
@@ -32,22 +33,39 @@ const childScale = 0.8
 type frozenLayout struct {
 	mu sync.Mutex
 	at map[string]index.Point
+	// draft holds the positions given while the first run had not resolved
+	// every Dependency: kept in memory only, so that the positions frozen
+	// at the end of the first run follow the Dependencies.
+	draft map[string]index.Point
 }
 
 // position returns the frozen position of a Module, also of one no longer on
-// the Map: its last known position.
+// the Map: its last known position. Before the first run ends, a Module not
+// frozen yet has its draft position.
 func (w *workspace) position(id string) (index.Point, bool) {
 	w.layout.mu.Lock()
 	defer w.layout.mu.Unlock()
-	p, ok := w.layout.at[id]
+	if p, ok := w.layout.at[id]; ok {
+		return p, true
+	}
+	p, ok := w.layout.draft[id]
 	return p, ok
+}
+
+// dropDraft forgets the draft positions, once the first run has resolved
+// every Dependency.
+func (w *workspace) dropDraft() {
+	w.layout.mu.Lock()
+	defer w.layout.mu.Unlock()
+	w.layout.draft = nil
 }
 
 // place gives a position to every Module of snap that has none. Modules
 // already placed keep theirs: new Modules are relaxed around them, Packages
 // among the Packages, Directories in the disc of their Package, Files in the
 // disc of their Directory. Placement does not depend on the tests switch:
-// test Files are laid out too.
+// test Files are laid out too. A partial snapshot is only drafted: its new
+// Modules get positions kept in memory, not frozen.
 func (w *workspace) place(snap *snapshot) error {
 	l := &w.layout
 	l.mu.Lock()
@@ -58,7 +76,9 @@ func (w *workspace) place(snap *snapshot) error {
 	for lv := range levels {
 		levels[lv] = snap.tree.Nodes(modules.Query{Level: modules.Level(lv), Tests: true})
 		for _, n := range levels[lv] {
-			if _, ok := l.at[n.ID]; !ok {
+			_, frozen := l.at[n.ID]
+			_, drafted := l.draft[n.ID]
+			if !frozen && !(snap.partial && drafted) {
 				missing = true
 			}
 		}
@@ -69,7 +89,30 @@ func (w *workspace) place(snap *snapshot) error {
 	if err := l.reload(w.ix); err != nil {
 		return err
 	}
+	if snap.partial {
+		at := maps.Clone(l.at)
+		maps.Copy(at, l.draft)
+		learnt := placeInto(at, snap, levels)
+		separate(at, learnt)
+		if l.draft == nil {
+			l.draft = map[string]index.Point{}
+		}
+		maps.Copy(l.draft, learnt)
+		return nil
+	}
+	learnt := placeInto(l.at, snap, levels)
+	separate(l.at, learnt)
+	if err := w.ix.PutLayout(learnt); err != nil {
+		return fmt.Errorf("index: %w", err)
+	}
+	// Another process may have frozen some of these Modules first: its
+	// positions are the ones kept.
+	return l.reload(w.ix)
+}
 
+// placeInto places the Modules of levels missing from at, around the ones at
+// holds, and returns their positions, also written into at.
+func placeInto(at map[string]index.Point, snap *snapshot, levels [3][]modules.Node) map[string]index.Point {
 	learnt := map[string]index.Point{}
 	for lv, nodes := range levels {
 		q := modules.Query{Level: modules.Level(lv), Tests: true}
@@ -80,7 +123,7 @@ func (w *workspace) place(snap *snapshot) error {
 		var parents []string
 		for p, members := range groups {
 			for _, i := range members {
-				if _, ok := l.at[nodes[i].ID]; !ok {
+				if _, ok := at[nodes[i].ID]; !ok {
 					parents = append(parents, p)
 					break
 				}
@@ -101,14 +144,14 @@ func (w *workspace) place(snap *snapshot) error {
 		for k, parent := range parents {
 			g := layout.Group{Seed: parent}
 			if parent != "" {
-				c := l.at[parent]
+				c := at[parent]
 				g.Center = layout.Point{X: c.X, Y: c.Y}
 				g.Bound = Radius(Level(lv-1), sizes[parent])
 			}
 			slot := map[string]int{}
 			for _, i := range groups[parent] {
 				n := nodes[i]
-				p, fixed := l.at[n.ID]
+				p, fixed := at[n.ID]
 				slot[n.ID] = len(g.Nodes)
 				g.Nodes = append(g.Nodes, layout.Node{
 					ID: n.ID, Radius: Radius(Level(lv), n.Size), Fixed: fixed, Pos: layout.Point{X: p.X, Y: p.Y},
@@ -128,19 +171,13 @@ func (w *workspace) place(snap *snapshot) error {
 			for _, n := range g.Nodes {
 				if !n.Fixed {
 					p := index.Point{X: n.Pos.X, Y: n.Pos.Y}
-					l.at[n.ID] = p
+					at[n.ID] = p
 					learnt[n.ID] = p
 				}
 			}
 		}
 	}
-	l.separate(learnt)
-	if err := w.ix.PutLayout(learnt); err != nil {
-		return fmt.Errorf("index: %w", err)
-	}
-	// Another process may have frozen some of these Modules first: its
-	// positions are the ones kept.
-	return l.reload(w.ix)
+	return learnt
 }
 
 // placeAll places groups in parallel: siblings of different parents do not
@@ -169,10 +206,10 @@ func (l *frozenLayout) reload(ix *index.Index) error {
 }
 
 // separate nudges the newly placed Modules that share exact coordinates with
-// another Module, so no two Modules sit at the same point.
-func (l *frozenLayout) separate(learnt map[string]index.Point) {
-	taken := make(map[index.Point]bool, len(l.at))
-	for id, p := range l.at {
+// another Module of at, so no two Modules sit at the same point.
+func separate(at, learnt map[string]index.Point) {
+	taken := make(map[index.Point]bool, len(at))
+	for id, p := range at {
 		if _, ok := learnt[id]; !ok {
 			taken[p] = true
 		}
@@ -190,7 +227,7 @@ func (l *frozenLayout) separate(learnt map[string]index.Point) {
 		}
 		taken[p] = true
 		learnt[id] = p
-		l.at[id] = p
+		at[id] = p
 	}
 }
 

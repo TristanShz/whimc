@@ -37,18 +37,17 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	defer ws.Close()
 
-	fmt.Fprintln(stdout, "Indexing…")
-	start := time.Now()
-	view, err := ws.Map(ctx, engine.State{}, engine.MapQuery{Level: engine.Packages})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "Indexed %s in %s.\n", count(len(view.Modules), "Package"), time.Since(start).Round(time.Millisecond))
-
 	l, err := listen(*port, portAsked)
 	if err != nil {
 		return err
 	}
+	// The first run goes on while the Map is served: the structure first,
+	// then the Packages one by one.
+	updates, err := ws.Changes(ctx)
+	if err != nil {
+		return err
+	}
+	go reportIndexing(updates, stdout, time.Now())
 	srv := &http.Server{
 		Handler:           server.New(ws, web.UI()),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -79,6 +78,22 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	return nil
+}
+
+// reportIndexing prints the progress of the first run.
+func reportIndexing(updates <-chan engine.Update, stdout io.Writer, start time.Time) {
+	for u := range updates {
+		switch u.Kind {
+		case engine.StructureIndexed:
+			fmt.Fprintf(stdout, "Indexing %s…\n", count(u.Total, "Package"))
+		case engine.Indexed:
+			fmt.Fprintf(stdout, "Indexed %s in %s.\n", count(u.Total, "Package"), time.Since(start).Round(time.Millisecond))
+			// The Watcher keeps streaming; nothing more to print.
+			for range updates {
+			}
+			return
+		}
+	}
 }
 
 // listen listens on port of 127.0.0.1 only, so that the code never leaves

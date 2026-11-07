@@ -90,6 +90,43 @@ func (r *Repo) CommonDir(ctx context.Context) (string, error) {
 	return dir, nil
 }
 
+// GitDir returns the absolute path of the work tree's own git directory,
+// where its HEAD lives (not the common one, for a linked worktree).
+func (r *Repo) GitDir(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// Ignored returns those of the repository-relative paths that git ignores:
+// untracked paths matching an exclude rule (.gitignore, info/exclude, the
+// global excludes file). Tracked paths are never ignored.
+func (r *Repo) Ignored(ctx context.Context, paths []string) (map[string]bool, error) {
+	ignored := map[string]bool{}
+	if len(paths) == 0 {
+		return ignored, nil
+	}
+	cmd := exec.CommandContext(ctx, r.git, "check-ignore", "--stdin", "-z")
+	cmd.Dir = r.root
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return ignored, nil // none of them is ignored
+	}
+	if err != nil {
+		return nil, fmt.Errorf("git check-ignore: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	for _, p := range splitNul(out) {
+		ignored[p] = true
+	}
+	return ignored, nil
+}
+
 // ResolveCommit turns a commit, branch or tag into a commit hash.
 func (r *Repo) ResolveCommit(ctx context.Context, ref string) (string, error) {
 	out, err := r.run(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")

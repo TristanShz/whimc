@@ -181,12 +181,10 @@ func (s *server) handleChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updates, err := s.ws.Changes(r.Context())
-	if err != nil && !errors.Is(err, engine.ErrNotImplemented) {
+	if err != nil {
 		writeEngineError(w, err)
 		return
 	}
-	// Until the engine streams Changes, updates is nil: the stream stays
-	// open and silent, so the browser does not keep reconnecting.
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	fmt.Fprint(w, ": whimc changes\n\n")

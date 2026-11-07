@@ -57,6 +57,18 @@ func Classify(p string) Kind {
 	return Ignored
 }
 
+// ExcludedFolder reports whether a repository-relative slash folder holds
+// nothing for the Map whatever its content: the git directory, or a vendored
+// or build-output folder, or one inside them.
+func ExcludedFolder(dir string) bool {
+	for _, s := range strings.Split(dir, "/") {
+		if excludedSegments[s] || s == ".git" {
+			return true
+		}
+	}
+	return false
+}
+
 // IsTest reports whether a source File is a test File: `*.test.*`,
 // `*.spec.*`, `*_test.go`, or anything under a `__tests__` folder.
 func IsTest(p string) bool {

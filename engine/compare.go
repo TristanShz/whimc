@@ -176,11 +176,14 @@ func (c Comparison) Module(id string) ModuleChange {
 }
 
 func (w *workspace) Compare(ctx context.Context, base, target State, q CompareQuery) (Comparison, error) {
-	bs, err := w.snapshot(ctx, base)
+	// Both States are read as far as the first run reached when the
+	// Comparison started, so that they differ only where the code does.
+	done := w.warm.reached()
+	bs, err := w.snapshot(ctx, base, done)
 	if err != nil {
 		return Comparison{}, fmt.Errorf("compare: base %v: %w", base, err)
 	}
-	ts, err := w.snapshot(ctx, target)
+	ts, err := w.snapshot(ctx, target, done)
 	if err != nil {
 		return Comparison{}, fmt.Errorf("compare: target %v: %w", target, err)
 	}

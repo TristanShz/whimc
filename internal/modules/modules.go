@@ -128,6 +128,17 @@ func (t *Tree) Locate(p string) (dir, pkg string, ok bool) {
 	return t.files[i].dir, t.files[i].pkg, true
 }
 
+// PackageOf returns the folder of the Package a File at p belongs to, given
+// the folders holding a manifest: the nearest one enclosing it, "." (the
+// implicit root Package) when there is none. It agrees with Build.
+func PackageOf(manifestDirs map[string]bool, p string) string {
+	for dir := path.Dir(p); ; dir = path.Dir(dir) {
+		if manifestDirs[dir] || dir == "." {
+			return dir
+		}
+	}
+}
+
 func (t *Tree) owner(dir string) *pkg {
 	for {
 		if p := t.packages[dir]; p != nil {

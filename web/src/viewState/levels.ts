@@ -6,8 +6,8 @@ export const VIEW = {
    * A level starts to fade in when its typical disc reaches this radius on
    * screen, in pixels, and has fully faded in at revealEndPx.
    */
-  revealStartPx: 6,
-  revealEndPx: 16,
+  revealStartPx: 10,
+  revealEndPx: 26,
   /** The weight a level keeps as context behind the levels below it. */
   contextWeight: 0.15,
   /** Opacity factor of what the hovered or selected Module is not related to. */
@@ -125,4 +125,21 @@ export function fetchArea(v: Rect): Rect {
     x1: Math.ceil((v.x1 + w / 2) / step) * step,
     y1: Math.ceil((v.y1 + h / 2) / step) * step,
   };
+}
+
+/**
+ * What a camera changes in the view state beyond the level weights (which
+ * the renderer blends on its own every frame): the levels drawn, the level
+ * in view and the area a big level is fetched for. Two cameras with the same
+ * signature give the same nodes, edges and requests.
+ */
+export function cameraSignature(
+  radii: Record<Level, number | null>,
+  zoom: number,
+  viewport: Rect,
+): string {
+  const { level, weights } = levelBlend(radii, zoom);
+  const drawn = (Object.keys(weights) as Level[]).filter((l) => weights[l] > 0);
+  const a = fetchArea(viewport);
+  return `${level}|${drawn.join(",")}|${a.x0},${a.y0},${a.x1},${a.y1}`;
 }

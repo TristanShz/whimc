@@ -1,87 +1,292 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+// The Map page: the view state computed from what the server sent and what
+// the user does, drawn by the WebGL canvas, with its floating controls.
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createApi } from "./api/client";
-import type { MapView, Rect } from "./api/types";
-import { computeView, type UiState } from "./viewState";
+import { LEVELS, type Level, type Module } from "./api/types";
+import { useMapData } from "./data/useMapData";
+import { MapCanvas, type MapHandle } from "./render/MapCanvas";
+import { boundsOf, diveArea } from "./render/camera";
+import { keyAction } from "./render/keys";
+import { usePalette, usePrefersReducedMotion } from "./render/theme";
+import { DetailsPanel } from "./ui/DetailsPanel";
+import { LevelIndicator } from "./ui/LevelIndicator";
+import { Legend } from "./ui/Legend";
+import { Toolbar } from "./ui/Toolbar";
+import { ZoomControls } from "./ui/ZoomControls";
+import {
+  computeView,
+  VIEW,
+  cameraSignature,
+  levelBlend,
+  searchMatches,
+  typicalRadii,
+  type Camera,
+  type Requests,
+  type UiState,
+} from "./viewState";
 
 const api = createApi();
 
-// A placeholder page until the Sigma renderer: it fetches the Packages and
-// draws them as plain discs from the view state, fitted to the window.
+/** After the camera stops this long, the view state takes its exact position. */
+const CAMERA_SETTLE_MS = 250;
+/** How often the level indicator follows a moving camera. */
+const INDICATOR_MS = 60;
+
+const LEVEL_NAMES: Record<Level, string> = {
+  packages: "Packages",
+  directories: "Directories",
+  files: "Files",
+};
+
 export function App() {
-  const [packages, setPackages] = useState<MapView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const palette = usePalette();
+  const reducedMotion = usePrefersReducedMotion();
+  const map = useRef<MapHandle>(null);
+  const searchField = useRef<HTMLInputElement>(null);
+
+  const [camera, setCamera] = useState<Camera>({
+    zoom: 0,
+    viewport: { x0: 0, y0: 0, x1: 0, y1: 0 },
+  });
+  const [search, setSearch] = useState("");
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tests, setTests] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const [requests, setRequests] = useState<Requests>({
+    maps: [{ level: "packages", tests: false }],
+    compare: null,
+  });
+  const { data, loading, errors, retry } = useMapData(api, requests);
+
+  const ui: UiState = useMemo(
+    () => ({ camera, search, hovered, selected, tests, changes: null }),
+    [camera, search, hovered, selected, tests],
+  );
+  const view = useMemo(() => computeView(data, ui), [data, ui]);
+  useEffect(() => setRequests(view.requests), [view.requests]);
+
+  const packages = data.levels.packages;
+  const bounds = useMemo(() => boundsOf(packages?.modules ?? []), [packages]);
+  const radii = useMemo(() => typicalRadii(data.levels), [data.levels]);
+  const blend = useCallback((zoom: number) => levelBlend(radii, zoom), [radii]);
+
+  // The camera moves every frame, and the renderer blends the levels on its
+  // own; the view state is computed again only when the camera changes what
+  // it decides (cameraSignature), and once the camera settles.
+  const [indicator, setIndicator] = useState<{ level: Level; depth: number }>({
+    level: "packages",
+    depth: 0,
+  });
+  const latestCamera = useRef<Camera | null>(null);
+  const signature = useRef("");
+  const settle = useRef<number | undefined>(undefined);
+  const indicatorAt = useRef(0);
+  const onCamera = useCallback(
+    (c: Camera) => {
+      latestCamera.current = c;
+      const sig = cameraSignature(radii, c.zoom, c.viewport);
+      if (sig !== signature.current) {
+        signature.current = sig;
+        setCamera(c);
+      }
+      window.clearTimeout(settle.current);
+      settle.current = window.setTimeout(() => {
+        if (latestCamera.current) setCamera(latestCamera.current);
+      }, CAMERA_SETTLE_MS);
+      const now = performance.now();
+      if (now - indicatorAt.current > INDICATOR_MS) {
+        indicatorAt.current = now;
+        const b = levelBlend(radii, c.zoom);
+        setIndicator({ level: b.level, depth: b.depth });
+      }
+    },
+    [radii],
+  );
+  useEffect(() => () => window.clearTimeout(settle.current), []);
+  // Data arriving changes the blend at the same camera.
+  useEffect(
+    () => setIndicator({ level: view.level, depth: view.depth }),
+    [view.level, view.depth],
+  );
+
+  const matches = useMemo(() => searchMatches(data, ui), [data, ui]);
+  const showMatches = useCallback(() => {
+    const area = boundsOf(matches);
+    if (area) map.current?.flyTo(area, 0.7);
+  }, [matches]);
+
+  /** Brings a Module's inside into view, close enough for its children to show. */
+  const dive = useCallback((m: Module) => {
+    const screen = Math.min(window.innerWidth, window.innerHeight);
+    map.current?.flyTo(diveArea(m, screen, VIEW.revealEndPx), 0.7);
+  }, []);
+  const diveInto = useCallback(
+    (id: string) => {
+      for (const l of LEVELS) {
+        const m = data.levels[l]?.modules.find((m) => m.id === id);
+        if (m) return dive(m);
+      }
+    },
+    [data.levels, dive],
+  );
+  const pick = useCallback(
+    (m: Module) => {
+      setSelected(m.id);
+      dive(m);
+    },
+    [dive],
+  );
 
   useEffect(() => {
-    const ctrl = new AbortController();
-    api
-      .map({ level: "packages" }, ctrl.signal)
-      .then(setPackages)
-      .catch((e: unknown) => {
-        if (!ctrl.signal.aborted) setError(String(e));
-      });
-    return () => ctrl.abort();
-  }, []);
-
-  const bounds = useMemo(() => fit(packages), [packages]);
-  const view = useMemo(() => {
-    if (!packages) return null;
-    const ui: UiState = {
-      camera: { zoom: 600 / (bounds.x1 - bounds.x0), viewport: bounds },
-      search: "",
-      hovered: null,
-      selected: null,
-      tests: false,
-      changes: null,
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const editable =
+        !!t &&
+        (t.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+      const action = keyAction(e, editable);
+      if (!action) return;
+      if (action === "escape") {
+        if (editable && t === searchField.current) {
+          if (search) setSearch("");
+          else searchField.current?.blur();
+        } else if (selected) setSelected(null);
+        else if (search) setSearch("");
+        else return;
+      } else if (action === "search") searchField.current?.focus();
+      else if (action === "zoomIn") map.current?.zoomIn();
+      else if (action === "zoomOut") map.current?.zoomOut();
+      else map.current?.fit();
+      e.preventDefault();
     };
-    return computeView({ levels: { packages }, comparison: null }, ui);
-  }, [packages, bounds]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [search, selected]);
 
-  if (error) return <p className="message">Could not load the Map: {error}</p>;
-  if (!view) return <p className="message">Indexing…</p>;
+  // A level that failed while the Map is on screen: a toast. The Packages
+  // failing before anything is on screen is the whole-Map error below.
+  const levelError = LEVELS.find(
+    (l) => errors[l] && (l !== "packages" || packages !== undefined),
+  );
+  const empty = packages !== undefined && packages.modules.length === 0;
+
   return (
-    <main>
-      <header>
-        whimc · {view.nodes.length} Packages · level: {view.level}
-      </header>
-      <svg
-        viewBox={`${bounds.x0} ${bounds.y0} ${bounds.x1 - bounds.x0} ${bounds.y1 - bounds.y0}`}
-        role="img"
-        aria-label="The Packages of the repository"
-      >
-        {view.nodes.map((n) => (
-          <g key={n.id} opacity={n.opacity}>
-            <circle
-              cx={n.x}
-              cy={n.y}
-              r={n.radius}
-              className="node"
-              style={{ "--heat": n.heat } as CSSProperties}
-            />
-            <text x={n.x} y={n.y} fontSize={n.radius / 3} textAnchor="middle">
-              {n.name}
-            </text>
-          </g>
-        ))}
-      </svg>
+    <main className="app">
+      <h1 className="visually-hidden">whimc, the Map of this repository</h1>
+      <MapCanvas
+        ref={map}
+        view={view}
+        palette={palette}
+        bounds={bounds}
+        blend={blend}
+        reducedMotion={reducedMotion}
+        onCamera={onCamera}
+        onHover={setHovered}
+        onSelect={setSelected}
+        onDive={diveInto}
+        onFailure={setFailure}
+      />
+
+      <Toolbar
+        search={search}
+        matches={matches.length}
+        tests={tests}
+        onSearch={setSearch}
+        onSearchSubmit={showMatches}
+        onTests={setTests}
+        searchRef={searchField}
+      />
+      <LevelIndicator level={indicator.level} depth={indicator.depth} />
+      <Legend />
+      <ZoomControls
+        onZoomIn={() => map.current?.zoomIn()}
+        onZoomOut={() => map.current?.zoomOut()}
+        onFit={() => map.current?.fit()}
+      />
+      {selected && (
+        <DetailsPanel
+          api={api}
+          id={selected}
+          tests={tests}
+          onClose={() => setSelected(null)}
+          onPick={pick}
+        />
+      )}
+
+      {failure ? (
+        <Status title="This browser cannot draw the Map">
+          whimc draws the Map with WebGL, which is turned off or unavailable
+          here ({failure}). Try another browser, or turn hardware acceleration
+          on.
+        </Status>
+      ) : !packages && errors.packages ? (
+        <Status
+          title="Could not load the Map"
+          action={<button onClick={retry}>Try again</button>}
+        >
+          {errors.packages}. If you stopped it, run <code>whimc serve</code>{" "}
+          again in the repository, then try again.
+        </Status>
+      ) : !packages ? (
+        <Status title="Indexing the repository" busy>
+          The first run reads every File; the next ones reuse the index and open
+          at once.
+        </Status>
+      ) : empty ? (
+        <Status
+          title="No source Files here"
+          action={
+            !tests ? (
+              <button onClick={() => setTests(true)}>Show test Files</button>
+            ) : undefined
+          }
+        >
+          whimc maps TypeScript, JavaScript and Go Files that git tracks or
+          would track. {!tests && "Test Files are hidden."}
+        </Status>
+      ) : null}
+
+      {levelError && (
+        <div className="panel toast" role="alert">
+          Could not load the {LEVEL_NAMES[levelError]}: {errors[levelError]}
+          <button onClick={retry}>Try again</button>
+        </div>
+      )}
+      {loading.size > 0 && packages && (
+        <span className="loading-dot" role="status" aria-label="Loading">
+          <i />
+        </span>
+      )}
     </main>
   );
 }
 
-/** The square around every Package, with a margin. */
-function fit(view: MapView | null): Rect {
-  const ms = view?.modules ?? [];
-  if (ms.length === 0) return { x0: -1, y0: -1, x1: 1, y1: 1 };
-  const x0 = Math.min(...ms.map((m) => m.x - m.radius));
-  const y0 = Math.min(...ms.map((m) => m.y - m.radius));
-  const x1 = Math.max(...ms.map((m) => m.x + m.radius));
-  const y1 = Math.max(...ms.map((m) => m.y + m.radius));
-  const side = Math.max(x1 - x0, y1 - y0) * 1.1;
-  const cx = (x0 + x1) / 2;
-  const cy = (y0 + y1) / 2;
-  return {
-    x0: cx - side / 2,
-    y0: cy - side / 2,
-    x1: cx + side / 2,
-    y1: cy + side / 2,
-  };
+function Status(p: {
+  title: string;
+  children: ReactNode;
+  action?: ReactNode;
+  busy?: boolean;
+}) {
+  return (
+    <section
+      className="status"
+      role={p.busy ? "status" : "alert"}
+      aria-busy={p.busy}
+    >
+      {p.busy && <span className="status-pulse" aria-hidden="true" />}
+      <h2>{p.title}</h2>
+      <p>{p.children}</p>
+      {p.action}
+    </section>
+  );
 }

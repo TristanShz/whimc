@@ -87,21 +87,7 @@ export function computeView(data: MapData, ui: UiState): ViewState {
 
   // The search matches, among everything fetched.
   const query = ui.search.trim().toLowerCase();
-  const matches = new Set<string>();
-  if (query) {
-    const all = [
-      ...LEVELS.flatMap((l) => data.levels[l]?.modules ?? []),
-      ...(comparison ? LEVELS.flatMap((l) => comparison[l].modules) : []),
-    ];
-    for (const m of all) {
-      if (
-        places.has(m.id) &&
-        (m.name.toLowerCase().includes(query) ||
-          m.path.toLowerCase().includes(query))
-      )
-        matches.add(m.id);
-    }
-  }
+  const matches = new Set(searchMatches(data, ui).map((m) => m.id));
   const matchAncestors = ancestorsOf(matches);
   const keptBySearch = (id: string) =>
     !query || within(id, matches) || matchAncestors.has(id);
@@ -266,6 +252,43 @@ export function computeView(data: MapData, ui: UiState): ViewState {
       : null,
     requests: requests(data, ui, weights),
   };
+}
+
+/** A Module the search finds, with where it is on the Map. */
+export interface SearchMatch {
+  id: string;
+  level: Level;
+  x: number;
+  y: number;
+  radius: number;
+}
+
+/**
+ * The Modules whose name or path contains the search, case-insensitively,
+ * among everything fetched (levels not in view included), each once. Test
+ * Files count only while the tests switch shows them; removed Modules only
+ * while the Changes switch is on.
+ */
+export function searchMatches(data: MapData, ui: UiState): SearchMatch[] {
+  const query = ui.search.trim().toLowerCase();
+  if (!query) return [];
+  const comparison = ui.changes ? data.comparison : null;
+  const out = new Map<string, SearchMatch>();
+  for (const l of LEVELS) {
+    const ms = [
+      ...(data.levels[l]?.modules ?? []),
+      ...(comparison?.[l].modules ?? []),
+    ];
+    for (const m of ms) {
+      if (out.has(m.id) || (m.test && !ui.tests)) continue;
+      if (
+        m.name.toLowerCase().includes(query) ||
+        m.path.toLowerCase().includes(query)
+      )
+        out.set(m.id, { id: m.id, level: l, x: m.x, y: m.y, radius: m.radius });
+    }
+  }
+  return [...out.values()];
 }
 
 /** A stable key of a Map request, to cache and deduplicate fetches. */

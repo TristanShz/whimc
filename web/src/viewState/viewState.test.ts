@@ -10,8 +10,11 @@ import type {
 } from "../api/types";
 import {
   VIEW,
+  cameraSignature,
+  typicalRadii,
   computeView,
   requestKey,
+  searchMatches,
   type MapData,
   type NodeView,
   type UiState,
@@ -352,6 +355,24 @@ describe("search", () => {
     expect(edge("file:web/app/main.ts->file:core/money/cents.ts").dimmed).toBe(
       true,
     );
+  });
+
+  it("finds matches in the levels not in view, each Module once, to count them and fly to them", () => {
+    const found = searchMatches(loaded, at(FAR, { search: "money" }));
+    expect(found.map((m) => m.id)).toEqual([
+      "dir:core/money",
+      "file:core/money/cents.ts",
+    ]);
+    expect(found[0]).toMatchObject({
+      level: "directories",
+      radius: DIR_RADIUS,
+    });
+    expect(
+      searchMatches(loaded, at(FAR, { search: "money", tests: true })).map(
+        (m) => m.id,
+      ),
+    ).toContain("file:core/money/cents.test.ts");
+    expect(searchMatches(loaded, at(FAR, { search: " " }))).toEqual([]);
   });
 
   it("fades nothing when the search is blank", () => {
@@ -703,5 +724,37 @@ describe("measures", () => {
         (e) => e.id === "file:web/app/view.ts->file:core/money/cents.ts",
       )?.kind,
     ).toBe("type-only");
+  });
+});
+
+describe("camera signature", () => {
+  const radii = typicalRadii(loaded.levels);
+  const vp = { x0: 0, y0: 0, x1: 100, y1: 80 };
+  const sig = (zoom: number, v = vp) => cameraSignature(radii, zoom, v);
+
+  it("stays the same while a zoom only moves the blend between the same levels", () => {
+    const a = zoomFor(VIEW.revealStartPx * 1.1, DIR_RADIUS);
+    const b = zoomFor(VIEW.revealStartPx * 1.3, DIR_RADIUS);
+    expect(sig(a)).toBe(sig(b));
+    expect(sig(a, { x0: 2, y0: 1, x1: 102, y1: 81 })).toBe(sig(a));
+  });
+
+  it("changes when a level starts to be drawn, the level in view changes, or the fetch area moves", () => {
+    expect(sig(FAR)).not.toBe(
+      sig(zoomFor(VIEW.revealStartPx * 1.1, DIR_RADIUS)),
+    );
+    expect(sig(zoomFor(VIEW.revealStartPx * 1.1, DIR_RADIUS))).not.toBe(
+      sig(DIRECTORIES),
+    );
+    expect(sig(FAR, { x0: 5000, y0: 0, x1: 5100, y1: 80 })).not.toBe(sig(FAR));
+  });
+
+  it("agrees with the view state: same signature, same nodes and requests", () => {
+    const a = zoomFor(VIEW.revealStartPx * 1.1, DIR_RADIUS);
+    const b = zoomFor(VIEW.revealStartPx * 1.3, DIR_RADIUS);
+    const va = computeView(loaded, at(a));
+    const vb = computeView(loaded, at(b));
+    expect(vb.nodes.map((n) => n.id)).toEqual(va.nodes.map((n) => n.id));
+    expect(vb.requests).toEqual(va.requests);
   });
 });

@@ -268,3 +268,43 @@ func (ix *Index) write(query string, fill func(*sql.Stmt) error) error {
 	}
 	return tx.Commit()
 }
+
+// Point is a frozen position of a Module on the Map.
+type Point struct{ X, Y float64 }
+
+// Layout returns every position the index holds, by Module ID. Positions are
+// never deleted: a Module that left the Map keeps its last one.
+func (ix *Index) Layout() (map[string]Point, error) {
+	rows, err := ix.db.Query("SELECT module, x, y FROM layout")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	found := map[string]Point{}
+	for rows.Next() {
+		var id string
+		var p Point
+		if err := rows.Scan(&id, &p.X, &p.Y); err != nil {
+			return nil, err
+		}
+		found[id] = p
+	}
+	return found, rows.Err()
+}
+
+// PutLayout stores the positions of Modules that had none. A position is
+// frozen once stored: another process that placed the same Module first wins.
+func (ix *Index) PutLayout(positions map[string]Point) error {
+	if len(positions) == 0 {
+		return nil
+	}
+	return ix.write("INSERT OR IGNORE INTO layout (module, x, y) VALUES (?, ?, ?)",
+		func(stmt *sql.Stmt) error {
+			for id, p := range positions {
+				if _, err := stmt.Exec(id, p.X, p.Y); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+}

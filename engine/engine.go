@@ -33,7 +33,7 @@ type State struct{ Ref string }
 
 // Workspace is an opened repository.
 type Workspace interface {
-	// Map returns the Modules of one level.
+	// Map returns the Modules of one level, with their frozen positions.
 	Map(ctx context.Context, at State, q MapQuery) (MapView, error)
 	// Compare returns what differs between two States, File by File,
 	// aggregated per Directory and Package.
@@ -101,7 +101,8 @@ type MapQuery struct {
 	// only its descendants are returned. A bare path names the Package at that
 	// path when there is one, the Directory otherwise.
 	Within string
-	// Viewport optionally keeps only what is in view, for very large levels.
+	// Viewport optionally keeps only the Modules whose disc meets it, for
+	// very large levels; Dependencies are kept between those Modules only.
 	Viewport *Rect
 	// Tests includes test Files; when false, test Files are left out of every
 	// Module, and Modules left without Files disappear.
@@ -178,6 +179,10 @@ type Module struct {
 	Children int
 	// Test is set on test Files.
 	Test bool
+	// X and Y are the Module's frozen position on the Map, in map
+	// coordinates shared by every level: a child sits inside its parent's
+	// disc. Radius is the radius of its disc, from its Size (see Radius).
+	X, Y, Radius float64
 }
 
 // Comparison is what differs between two States.
@@ -228,6 +233,8 @@ type workspace struct {
 	ix   *index.Index
 	opts Options
 
+	layout frozenLayout
+
 	parsedBlobs   atomic.Int64
 	diffedCommits atomic.Int64
 }
@@ -240,21 +247,28 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 	if q.Level < Packages || q.Level > Files {
 		return MapView{}, fmt.Errorf("map: unknown level %v", q.Level)
 	}
-	if q.Viewport != nil {
-		return MapView{}, fmt.Errorf("map: viewport filtering comes with the layout: %w", ErrNotImplemented)
-	}
 	snap, err := w.snapshot(ctx, at)
 	if err != nil {
 		return MapView{}, fmt.Errorf("map: %w", err)
 	}
+	if err := w.place(snap); err != nil {
+		return MapView{}, fmt.Errorf("map: layout: %w", err)
+	}
 	mq := modules.Query{Level: modules.Level(q.Level), Within: q.Within, Tests: q.Tests}
-	nodes := snap.tree.Nodes(mq)
-	view := MapView{Level: q.Level, Modules: make([]Module, len(nodes))}
-	for i, n := range nodes {
-		view.Modules[i] = Module{
+	view := MapView{Level: q.Level, Modules: []Module{}}
+	var nodes []modules.Node
+	for _, n := range snap.tree.Nodes(mq) {
+		p, _ := w.position(n.ID)
+		m := Module{
 			ID: n.ID, Level: Level(n.Level), Name: n.Name, Path: n.Path, Parent: n.Parent,
 			Size: n.Size, Churn: n.Churn, Children: n.Children, Test: n.Test,
+			X: p.X, Y: p.Y, Radius: Radius(Level(n.Level), n.Size),
 		}
+		if q.Viewport != nil && !inView(m, *q.Viewport) {
+			continue
+		}
+		view.Modules = append(view.Modules, m)
+		nodes = append(nodes, n)
 	}
 	for _, d := range snap.tree.Dependencies(mq, nodes, snap.deps) {
 		view.Dependencies = append(view.Dependencies, Dependency{

@@ -135,5 +135,26 @@ export interface ModuleDetails {
   movingChildren: Module[];
 }
 
+/** What an Update reports (engine.UpdateKind). */
+export type UpdateKind =
+  /** The first run knows the structure; `total` Packages to index. */
+  | "structure"
+  /** The first run indexed one more Package: `done` of `total`. */
+  | "package"
+  /** The first run is over. */
+  | "indexed"
+  /** Files of the working tree were written, created or removed. */
+  | "files"
+  /** HEAD points at another commit. */
+  | "head";
+
 /** A change of the index pushed on /api/changes. */
-export type Update = Record<string, unknown>;
+export interface Update {
+  kind: UpdateKind;
+  /** The Package a "package" Update is about. */
+  package?: string;
+  done?: number;
+  total?: number;
+  /** The paths a "files" Update is about. */
+  paths?: string[];
+}

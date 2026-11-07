@@ -758,6 +758,54 @@ code {
   flex: none;
 }
 
+/* First run progress: the structure is on screen, the rest fills in. */
+
+.indexing {
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  row-gap: 6px;
+  width: min(360px, calc(100vw - 2 * var(--space-4)));
+  padding: 8px 14px 10px;
+  font-size: var(--text-s);
+}
+
+.indexing-title {
+  font-weight: 600;
+}
+
+.indexing-text {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.indexing-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.indexing-bar i {
+  display: block;
+  height: 100%;
+  background: var(--focus);
+  transform-origin: left;
+  transition: transform 0.3s var(--ease);
+}
+
+.indexing ~ .toast {
+  bottom: calc(var(--space-4) + 64px);
+}
+
 .loading-dot {
   position: absolute;
   z-index: 2;
@@ -813,6 +861,14 @@ code {
 
   .legend {
     max-width: calc(100vw - 96px);
+  }
+
+  .indexing {
+    left: var(--space-4);
+    right: 72px;
+    bottom: calc(var(--space-4) + 48px);
+    width: auto;
+    transform: none;
   }
 
   .details {

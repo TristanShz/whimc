@@ -22,6 +22,8 @@ export interface DetailsPanelProps {
   api: Api;
   id: string;
   tests: boolean;
+  /** The revision of the index: a newer one fetches the details again. */
+  revision: number;
   onClose(): void;
   /** A moving child was picked: select it and bring it into view. */
   onPick(m: Module): void;
@@ -42,7 +44,7 @@ export function DetailsPanel(p: DetailsPanelProps) {
       },
     );
     return () => ctrl.abort();
-  }, [p.api, p.id, p.tests]);
+  }, [p.api, p.id, p.tests, p.revision]);
 
   const current = state?.id === p.id ? state : null;
 

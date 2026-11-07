@@ -12,11 +12,13 @@ import {
 import { createApi } from "./api/client";
 import { LEVELS, type Level, type Module } from "./api/types";
 import { useMapData } from "./data/useMapData";
+import { useLive } from "./data/useLive";
 import { MapCanvas, type MapHandle } from "./render/MapCanvas";
 import { boundsOf, diveArea } from "./render/camera";
 import { keyAction } from "./render/keys";
 import { usePalette, usePrefersReducedMotion } from "./render/theme";
 import { DetailsPanel } from "./ui/DetailsPanel";
+import { IndexingProgress } from "./ui/IndexingProgress";
 import { LevelIndicator } from "./ui/LevelIndicator";
 import { Legend } from "./ui/Legend";
 import { Toolbar } from "./ui/Toolbar";
@@ -66,7 +68,14 @@ export function App() {
     maps: [{ level: "packages", tests: false }],
     compare: null,
   });
-  const { data, loading, errors, retry } = useMapData(api, requests);
+  // Each Update of the index fetches what is in view again; the previous
+  // answers stay on screen until the new ones land.
+  const live = useLive(api);
+  const { data, loading, errors, retry } = useMapData(
+    api,
+    requests,
+    live.revision,
+  );
 
   const ui: UiState = useMemo(
     () => ({ camera, search, hovered, selected, tests, changes: null }),
@@ -218,6 +227,7 @@ export function App() {
           api={api}
           id={selected}
           tests={tests}
+          revision={live.revision}
           onClose={() => setSelected(null)}
           onPick={pick}
         />
@@ -256,6 +266,7 @@ export function App() {
         </Status>
       ) : null}
 
+      {packages && !empty && <IndexingProgress indexing={live.indexing} />}
       {levelError && (
         <div className="panel toast" role="alert">
           Could not load the {LEVEL_NAMES[levelError]}: {errors[levelError]}

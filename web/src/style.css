@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f5;
+  --fg: #1d1d1f;
+  --calm: 210 60% 55%;
+  --hot: 15 85% 55%;
+  font-family: system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111214;
+    --fg: #e8e8ea;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+header {
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+svg {
+  flex: 1;
+  width: 100%;
+}
+
+.node {
+  fill: color-mix(
+    in hsl,
+    hsl(var(--calm)),
+    hsl(var(--hot)) calc(var(--heat) * 100%)
+  );
+}
+
+text {
+  fill: var(--fg);
+  dominant-baseline: middle;
+}
+
+.message {
+  padding: 16px;
+}

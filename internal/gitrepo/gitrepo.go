@@ -159,16 +159,23 @@ func (r *Repo) ListCommit(ctx context.Context, commit string) ([]Entry, error) {
 	return entries, nil
 }
 
-// ListWorkTree returns the repository-relative paths of the regular Files of
-// the working tree as on disk: tracked Files still present, plus untracked
-// Files that are not ignored.
-func (r *Repo) ListWorkTree(ctx context.Context) ([]string, error) {
+// WorkTreeFile is a regular File of the working tree, with the size and
+// modification time that tell whether it changed since it was last read.
+type WorkTreeFile struct {
+	Path    string
+	Size    int64
+	ModTime int64 // Unix nanoseconds
+}
+
+// ListWorkTree returns the regular Files of the working tree as on disk:
+// tracked Files still present, plus untracked Files that are not ignored.
+func (r *Repo) ListWorkTree(ctx context.Context) ([]WorkTreeFile, error) {
 	out, err := r.run(ctx, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
-	var paths []string
+	var files []WorkTreeFile
 	for _, p := range splitNul(out) {
 		if seen[p] {
 			continue // a conflicted path is listed once per stage
@@ -182,10 +189,22 @@ func (r *Repo) ListWorkTree(ctx context.Context) ([]string, error) {
 			return nil, err
 		}
 		if info.Mode().IsRegular() {
-			paths = append(paths, p)
+			files = append(files, WorkTreeFile{Path: p, Size: info.Size(), ModTime: info.ModTime().UnixNano()})
 		}
 	}
-	return paths, nil
+	return files, nil
+}
+
+// StatWorkTree returns the size and modification time of a working-tree File.
+func (r *Repo) StatWorkTree(path string) (WorkTreeFile, error) {
+	info, err := os.Lstat(filepath.Join(r.root, filepath.FromSlash(path)))
+	if err != nil {
+		return WorkTreeFile{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return WorkTreeFile{}, fmt.Errorf("%s: not a regular file", path)
+	}
+	return WorkTreeFile{Path: path, Size: info.Size(), ModTime: info.ModTime().UnixNano()}, nil
 }
 
 // ReadWorkTree reads a working-tree File and returns its content and blob hash.

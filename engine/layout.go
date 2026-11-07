@@ -67,6 +67,9 @@ func (w *workspace) dropDraft() {
 // test Files are laid out too. A partial snapshot is only drafted: its new
 // Modules get positions kept in memory, not frozen.
 func (w *workspace) place(snap *snapshot) error {
+	if snap.placed.Load() {
+		return nil
+	}
 	l := &w.layout
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -84,6 +87,7 @@ func (w *workspace) place(snap *snapshot) error {
 		}
 	}
 	if !missing {
+		snap.placed.Store(!snap.partial)
 		return nil
 	}
 	if err := l.reload(w.ix); err != nil {
@@ -107,7 +111,11 @@ func (w *workspace) place(snap *snapshot) error {
 	}
 	// Another process may have frozen some of these Modules first: its
 	// positions are the ones kept.
-	return l.reload(w.ix)
+	if err := l.reload(w.ix); err != nil {
+		return err
+	}
+	snap.placed.Store(true)
+	return nil
 }
 
 // placeInto places the Modules of levels missing from at, around the ones at

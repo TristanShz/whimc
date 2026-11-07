@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/TristanShz/whimc/internal/churn"
 	"github.com/TristanShz/whimc/internal/gitrepo"
@@ -19,25 +20,46 @@ type source interface {
 	// paths lists the Files of the State.
 	paths(ctx context.Context) ([]string, error)
 	// entry returns a File's blob hash, and its content when reading it was
-	// needed to know the hash (nil otherwise: read it by blob).
+	// needed to know the hash (nil otherwise: read it with read).
 	entry(p string) (blob string, content []byte, err error)
+	// read returns the content of the File at p whose blob entry gave, and
+	// false when it is no longer that blob's.
+	read(p, blob string) (content []byte, exact bool, err error)
 }
 
-// worktreeSource reads the working tree as on disk.
-type worktreeSource struct{ repo *gitrepo.Repo }
-
-func (s worktreeSource) paths(ctx context.Context) ([]string, error) {
-	return s.repo.ListWorkTree(ctx)
+// worktreeSource reads the working tree as revalidated (see revalidate).
+type worktreeSource struct {
+	repo  *gitrepo.Repo
+	cache *worktreeCache
+	order []string
+	blobs map[string]string // by path
+	// contents holds the content of the Files read while revalidating, and
+	// of the manifests and configs.
+	contents map[string][]byte
 }
 
-func (s worktreeSource) entry(p string) (string, []byte, error) {
-	content, blob, err := s.repo.ReadWorkTree(p)
-	return blob, content, err
+func (s *worktreeSource) paths(context.Context) ([]string, error) { return s.order, nil }
+
+func (s *worktreeSource) entry(p string) (string, []byte, error) {
+	return s.blobs[p], s.contents[p], nil
+}
+
+func (s *worktreeSource) read(p, blob string) ([]byte, bool, error) {
+	content, now, err := s.repo.ReadWorkTree(p)
+	if err != nil {
+		return nil, false, err
+	}
+	if now != blob {
+		// Written since it was hashed: the next snapshot hashes it again.
+		s.cache.written([]string{p})
+	}
+	return content, now == blob, nil
 }
 
 // commitSource lists the tree of a commit; its blobs are known without
 // reading them.
 type commitSource struct {
+	repo  *gitrepo.Repo
 	blobs map[string]string // by path
 	order []string
 }
@@ -47,7 +69,7 @@ func newCommitSource(ctx context.Context, repo *gitrepo.Repo, commit string) (*c
 	if err != nil {
 		return nil, err
 	}
-	s := &commitSource{blobs: make(map[string]string, len(entries))}
+	s := &commitSource{repo: repo, blobs: make(map[string]string, len(entries))}
 	for _, e := range entries {
 		s.blobs[e.Path] = e.Blob
 		s.order = append(s.order, e.Path)
@@ -59,20 +81,9 @@ func (s *commitSource) paths(context.Context) ([]string, error) { return s.order
 
 func (s *commitSource) entry(p string) (string, []byte, error) { return s.blobs[p], nil, nil }
 
-// sourceOf opens the source of a State and returns the commit whose history
-// is the State's: the State's own commit, or HEAD for the working tree ("" in
-// a repository without commits).
-func (w *workspace) sourceOf(ctx context.Context, at State) (source, string, error) {
-	if at.Ref == "" {
-		head, err := w.repo.Head(ctx)
-		return worktreeSource{w.repo}, head, err
-	}
-	commit, err := w.repo.ResolveCommit(ctx, at.Ref)
-	if err != nil {
-		return nil, "", err
-	}
-	src, err := newCommitSource(ctx, w.repo, commit)
-	return src, commit, err
+func (s *commitSource) read(_, blob string) ([]byte, bool, error) {
+	content, err := s.repo.ReadBlob(blob)
+	return content, err == nil, err
 }
 
 // snapshot is the analysed form of one State.
@@ -86,6 +97,9 @@ type snapshot struct {
 	partial bool
 	// unparsed are the Files left unparsed for that reason.
 	unparsed []unparsedFile
+	// placed is set once every Module of a complete snapshot has a frozen
+	// position: positions are never deleted, so placing it again is moot.
+	placed atomic.Bool
 }
 
 // unparsedFile is a File of a partial snapshot the first run has to parse.
@@ -98,13 +112,20 @@ type unparsedFile struct {
 // Files are parsed and their Churn counted. A nil reached has reached all.
 type reached func(pkg string) bool
 
-// snapshot builds the Module hierarchy of a State and resolves its File
-// Dependencies, as far as the first run reached (see reached).
+// snapshot returns the Module hierarchy of a State and its File
+// Dependencies, as far as the first run reached (see reached), from the
+// cache when the State did not change since (see snapshotCache).
 func (w *workspace) snapshot(ctx context.Context, at State, done reached) (*snapshot, error) {
-	src, commit, err := w.sourceOf(ctx, at)
-	if err != nil {
-		return nil, err
+	if at.Ref == "" {
+		return w.worktreeSnapshot(ctx, done)
 	}
+	return w.commitSnapshot(ctx, at.Ref, done)
+}
+
+// build builds the Module hierarchy of the State src reads and resolves its
+// File Dependencies, with the Churn of the history behind commit ("" for
+// none), as far as the first run reached.
+func (w *workspace) build(ctx context.Context, src source, commit string, done reached) (*snapshot, error) {
 	paths, err := src.paths(ctx)
 	if err != nil {
 		return nil, err
@@ -135,7 +156,7 @@ func (w *workspace) snapshot(ctx context.Context, at State, done reached) (*snap
 			continue
 		}
 		if content == nil {
-			if content, err = w.repo.ReadBlob(blob); err != nil {
+			if content, _, err = src.read(p, blob); err != nil {
 				return nil, fmt.Errorf("read %s: %w", p, err)
 			}
 		}
@@ -169,9 +190,9 @@ func (w *workspace) snapshot(ctx context.Context, at State, done reached) (*snap
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			content := sf.content
+			content, exact := sf.content, true
 			if content == nil {
-				if content, err = w.repo.ReadBlob(sf.key.Blob); err != nil {
+				if content, exact, err = src.read(sf.path, sf.key.Blob); err != nil {
 					return nil, fmt.Errorf("read %s: %w", sf.path, err)
 				}
 			}
@@ -187,7 +208,9 @@ func (w *workspace) snapshot(ctx context.Context, at State, done reached) (*snap
 					w.parsedBlobs.Add(1)
 					b.Parse = &r
 				}
-				learnt[sf.key] = b
+				if exact {
+					learnt[sf.key] = b
+				}
 			}
 		}
 		if b.Generated {

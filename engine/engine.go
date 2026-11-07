@@ -58,6 +58,9 @@ type Stats struct {
 	// DiffedCommits is the number of commits whose touched paths were read
 	// from git for Churn: the ones the index did not know yet.
 	DiffedCommits int
+	// HashedFiles is the number of working-tree Files read and hashed: the
+	// ones new, or written since they were last hashed.
+	HashedFiles int
 }
 
 // Options tunes a Workspace. The zero value is the default.
@@ -281,6 +284,7 @@ type workspace struct {
 	opts Options
 
 	layout frozenLayout
+	cache  snapshotCache
 
 	// warm is the first run, started with the Watcher by the first call
 	// to Changes; both run until closing ends.
@@ -294,10 +298,14 @@ type workspace struct {
 
 	parsedBlobs   atomic.Int64
 	diffedCommits atomic.Int64
+	hashedFiles   atomic.Int64
 }
 
 func (w *workspace) Stats() Stats {
-	return Stats{ParsedBlobs: int(w.parsedBlobs.Load()), DiffedCommits: int(w.diffedCommits.Load())}
+	return Stats{
+		ParsedBlobs: int(w.parsedBlobs.Load()), DiffedCommits: int(w.diffedCommits.Load()),
+		HashedFiles: int(w.hashedFiles.Load()),
+	}
 }
 
 func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, error) {

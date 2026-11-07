@@ -110,6 +110,7 @@ func (w *workspace) startLive() error {
 	if err != nil {
 		return err
 	}
+	w.cache.worktree.watch()
 	w.background.Go(func() { wt.run(ctx) })
 	w.background.Go(func() { w.index(ctx) })
 	return nil
@@ -164,7 +165,8 @@ func (w *workspace) index(ctx context.Context) {
 }
 
 // parseWorkTree parses the working-tree Files at paths whose blob the index
-// does not know yet, and stores them in the index. Files gone are skipped.
+// does not know yet, and stores them in the index. Files gone are skipped;
+// Files hashed before and not written since are not hashed again.
 func (w *workspace) parseWorkTree(ctx context.Context, paths []string) error {
 	type read struct {
 		path    string
@@ -177,11 +179,15 @@ func (w *workspace) parseWorkTree(ctx context.Context, paths []string) error {
 		if modules.Classify(p) != modules.SourceFile {
 			continue
 		}
-		content, blob, err := w.repo.ReadWorkTree(p)
+		f, err := w.repo.StatWorkTree(p)
 		if err != nil {
 			continue // removed or unreadable since: the next Map tells
 		}
-		k := index.BlobKey{Blob: blob, Grammar: parse.Grammar(p)}
+		h, content, err := w.hashWorkTree(f, false)
+		if err != nil {
+			continue
+		}
+		k := index.BlobKey{Blob: h.blob, Grammar: parse.Grammar(p)}
 		reads = append(reads, read{p, k, content})
 		keys = append(keys, k)
 	}
@@ -199,6 +205,13 @@ func (w *workspace) parseWorkTree(ctx context.Context, paths []string) error {
 		}
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if r.content == nil {
+			content, blob, err := w.repo.ReadWorkTree(r.path)
+			if err != nil || blob != r.key.Blob {
+				continue // written since: the next Map hashes it again
+			}
+			r.content = content
 		}
 		facts := modules.Analyze(r.content)
 		b := index.Blob{Size: facts.Size, Generated: facts.Generated}

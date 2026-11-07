@@ -41,14 +41,14 @@ func (w *workspace) watch(ctx context.Context) (*watcher, error) {
 		return nil, err
 	}
 	wt := &watcher{ws: w, fs: fsw, gitDir: gitDir, watched: map[string]bool{}}
-	paths, err := w.repo.ListWorkTree(ctx)
+	files, err := w.repo.ListWorkTree(ctx)
 	if err != nil {
 		fsw.Close()
 		return nil, err
 	}
 	dirs := map[string]bool{".": true}
-	for _, p := range paths {
-		for d := path.Dir(p); !dirs[d]; d = path.Dir(d) {
+	for _, f := range files {
+		for d := path.Dir(f.Path); !dirs[d]; d = path.Dir(d) {
 			dirs[d] = true
 		}
 	}
@@ -114,7 +114,8 @@ func (wt *watcher) run(ctx context.Context) {
 			return
 		case <-wt.fs.Errors:
 			// An overflowing event queue loses events: the next ones still
-			// come, and a Map always reads the working tree as it is.
+			// come, and the next Map revalidates the whole working tree.
+			wt.ws.cache.worktree.invalidate(true)
 		case e, ok := <-wt.fs.Events:
 			if !ok {
 				return
@@ -131,11 +132,15 @@ func (wt *watcher) run(ctx context.Context) {
 			first = time.Time{}
 			paths := wt.flush(ctx, pending)
 			pending = map[string]bool{}
+			// The marks come before the Updates, so that a Map asked for
+			// after an Update reflects it.
 			if len(paths) > 0 {
+				wt.ws.cache.worktree.written(paths)
 				wt.ws.hub.publish(Update{Kind: FilesChanged, Paths: paths})
 			}
 			if headMoved {
 				headMoved = false
+				wt.ws.cache.worktree.invalidate(false)
 				wt.ws.hub.publish(Update{Kind: HeadMoved})
 			}
 		}

@@ -39,20 +39,19 @@ function useLegendOpen(): [boolean, (open: boolean) => void] {
   ];
 }
 
+/** A Dependency as the Map draws it: a gentle arc, in its kind's pattern. */
 function Line({ dash, className }: { dash?: string; className?: string }) {
   return (
     <svg
       width="34"
-      height="8"
-      viewBox="0 0 34 8"
+      height="10"
+      viewBox="0 0 34 10"
       aria-hidden="true"
       className={className}
     >
-      <line
-        x1="1"
-        y1="4"
-        x2="33"
-        y2="4"
+      <path
+        d="M1 7 Q17 1 33 7"
+        fill="none"
         stroke="currentColor"
         strokeWidth={dash === "dot" ? 2.4 : 1.6}
         strokeLinecap="round"
@@ -60,6 +59,20 @@ function Line({ dash, className }: { dash?: string; className?: string }) {
           dash === "dash" ? "5 3.5" : dash === "dot" ? "0.1 5" : undefined
         }
       />
+    </svg>
+  );
+}
+
+/** The taper of a Dependency: wide at the importer, narrow at the imported. */
+function Taper() {
+  return (
+    <svg width="34" height="10" viewBox="0 0 34 10" aria-hidden="true">
+      <circle cx="3" cy="7" r="2.5" fill="currentColor" opacity="0.55" />
+      <path
+        d="M6 5.4 Q18 1.2 30 6.4 L30 7 Q18 3.4 6 8.6 Z"
+        fill="currentColor"
+      />
+      <circle cx="31.5" cy="6.7" r="1.6" fill="currentColor" opacity="0.55" />
     </svg>
   );
 }
@@ -115,6 +128,9 @@ export function Legend({ changes = false }: { changes?: boolean }) {
             </span>
             <span>
               <Line dash="dot" /> dynamic
+            </span>
+            <span>
+              <Taper /> wide at the importer, narrow at the imported
             </span>
           </dd>
         </div>

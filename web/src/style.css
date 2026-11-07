@@ -38,8 +38,10 @@
   --canvas: #f2f4f8;
   --label: #1b2232;
   --halo: #f2f4f8;
-  --edge: #9aa4b8;
-  --grid: rgb(40 60 100 / 0.13);
+  --edge: #8590a8;
+  --grid: rgb(40 60 100 / 0.11);
+  --grid-major: rgb(40 60 100 / 0.2);
+  --vignette: rgb(30 45 80 / 0.07);
   --cool: #8da2c6;
   --warm: #8550dd;
   --hot: #e0531a;
@@ -65,7 +67,9 @@
     --label: #d9deea;
     --halo: #070b14;
     --edge: #56627f;
-    --grid: rgb(150 170 210 / 0.08);
+    --grid: rgb(150 170 210 / 0.07);
+    --grid-major: rgb(160 180 225 / 0.15);
+    --vignette: rgb(0 0 0 / 0.45);
     --cool: #4b689b;
     --warm: #9d78ec;
     --hot: #ff9046;
@@ -149,6 +153,19 @@ code {
   /* Its own stacking context: its layers stay under the panels. */
   z-index: 0;
   background:
+    /* A vignette over the chart, a major dot every fourth, the dot grid. */
+    radial-gradient(
+      ellipse 140% 110% at 50% 45%,
+      transparent 55%,
+      var(--vignette) 100%
+    ),
+    radial-gradient(
+        circle at 1.5px 1.5px,
+        var(--grid-major) 1.5px,
+        transparent 2px
+      )
+      var(--grid-major-x, 0) var(--grid-major-y, 0) /
+      calc(var(--grid-size, 24px) * 4) calc(var(--grid-size, 24px) * 4),
     radial-gradient(circle at 1px 1px, var(--grid) 1px, transparent 1.4px)
       var(--grid-x, 0) var(--grid-y, 0) / var(--grid-size, 24px)
       var(--grid-size, 24px),

@@ -1,9 +1,10 @@
-// The WebGL programs that draw the Map in sigma: a disc with a lens shading,
-// a rim, a Churn glow and a focus or Changes ring for Modules, and a line
-// with a solid, dashed or dotted pattern for Dependencies, drawn above the
-// discs from one disc's boundary to the other's. Both fade between
-// opacities on the GPU and take the level blend as a uniform, so that zooming
-// and hovering never rebuild the vertex buffers.
+// The WebGL programs that draw the Map in sigma: a disc lit as a soft dome
+// (rim light, a shadow on paper), with a breathing Churn bloom and a focus or
+// Changes ring, for Modules; and for Dependencies, an arc tapering from the
+// importer to the imported Module, solid, dashed or dotted, drawn above the
+// discs from one disc's boundary to the other's. Both fade between opacities
+// on the GPU (nodes grow in as they arrive) and take the level blend as a
+// uniform, so that zooming and hovering never rebuild the vertex buffers.
 //
 // Checked by eye in the browser (spec: the WebGL rendering is not automated).
 
@@ -57,6 +58,7 @@ uniform float u_sizeRatio;
 uniform float u_correctionRatio;
 uniform float u_minRadius;
 uniform float u_pickLevel;
+uniform float u_motion;    // 0 when the user asks for reduced motion
 ${COMMON}
 
 varying vec4 v_color;
@@ -67,8 +69,10 @@ varying float v_alpha;
 varying float v_ringAlpha;
 varying float v_context; // 1 when the node's level is only context
 varying vec4 v_style;    // level, glow extent (px), ring, hollow
+varying float v_pulse;   // the glow's breath, around 1
 
 const float bias = 255.0 / 254.0;
+const float TAU = 6.2831853;
 
 void main() {
   float weight = levelWeight(a_style.x);
@@ -79,10 +83,20 @@ void main() {
   // ... and keeps its ring (focus, match, change) as the highlight.
   float ringAlpha = fade * max(weight, 0.8 * reveal);
 
-  float radius = max(a_size / u_sizeRatio, u_minRadius);
-  float glowPx = a_style.y * clamp(radius * 0.9, 7.0, 48.0);
-  float ringPx = a_style.z > 0.5 ? 6.0 : 0.0;
-  float extent = radius + max(glowPx, ringPx) + 1.5;
+  // A node arriving grows into place as it fades in; one leaving shrinks a
+  // little as it fades out.
+  float t = clamp((u_time - a_fade.z) / FADE, 0.0, 1.0);
+  float arriving = a_fade.y < 0.01 && a_fade.x > 0.0 ? 1.0 : 0.0;
+  float leaving = a_fade.x < 0.001 && a_fade.y > 0.0 ? 1.0 : 0.0;
+  float out3 = 1.0 - pow(1.0 - t, 3.0);
+  float scale = mix(1.0, mix(0.55, 1.0, out3), arriving * u_motion)
+    * mix(1.0, mix(1.0, 0.82, t), leaving * u_motion);
+
+  float radius = max(a_size / u_sizeRatio, u_minRadius) * scale;
+  float glowPx = a_style.y * clamp(radius * 0.9, 8.0, 56.0);
+  float ringPx = a_style.z > 0.5 ? 7.0 : 0.0;
+  float shadowPx = min(10.0, 2.0 + radius * 0.2);
+  float extent = radius + max(max(glowPx, ringPx), shadowPx) + 1.5;
   bool drawn = max(alpha, a_style.z > 0.5 ? ringAlpha : 0.0) > 0.004;
 
   #ifdef PICKING_MODE
@@ -98,6 +112,10 @@ void main() {
   gl_Position = drawn
     ? vec4((u_matrix * vec3(position, 1)).xy, 0, 1)
     : vec4(2.0, 2.0, 2.0, 1.0);
+
+  // Each glowing node breathes at its own phase, slowly.
+  float phase = fract(sin(dot(a_position, vec2(12.9898, 78.233))) * 43758.5453);
+  v_pulse = 1.0 + u_motion * 0.22 * sin(u_time * TAU / 3.2 + phase * TAU);
 
   v_offset = offset;
   v_radius = radius;
@@ -127,10 +145,13 @@ varying float v_alpha;
 varying float v_ringAlpha;
 varying float v_context;
 varying vec4 v_style;
+varying float v_pulse;
 
 uniform float u_dark;
 
 const float PI = 3.14159265;
+// Light from the top left, as on a chart lit from the window.
+const vec3 LIGHT = vec3(-0.42, 0.52, 0.74);
 
 void main() {
   float d = length(v_offset);
@@ -140,32 +161,61 @@ void main() {
   if (d > max(r, 6.0)) discard;
   gl_FragColor = v_color;
   #else
+  bool dark = u_dark > 0.5;
   float inside = 1.0 - smoothstep(r - 1.0, r, d);
 
-  // Body: a soft lens, a touch lighter at the heart, with a crisp rim that
-  // carries the outline of a level drawn as context (a Package's territory).
-  float k = clamp(d / r, 0.0, 1.0);
-  vec3 body = v_color.rgb * (1.07 - 0.14 * k * k);
+  // Body: a soft dome, lit from the top left, a touch darker at its limb,
+  // with a faint sheen; flat enough that its colour still reads as Churn.
+  vec2 n2 = v_offset / max(r, 1.0);
+  float k2 = min(dot(n2, n2), 1.0);
+  vec3 normal = vec3(n2, sqrt(1.0 - k2));
+  float lambert = max(dot(normal, normalize(LIGHT)), 0.0);
+  vec3 base = v_color.rgb;
+  vec3 body = base * (0.88 + 0.2 * lambert);
+  body *= 1.0 - 0.07 * smoothstep(0.7, 1.0, sqrt(k2));
+  float sheen = pow(lambert, 24.0) * (dark ? 0.16 : 0.12) * smoothstep(5.0, 14.0, r);
+  body = mix(body, vec3(1.0), sheen);
+
+  // Rim light: a thin bright band inside the edge on the lit side.
+  float band = max(1.2, min(3.0, r * 0.08));
+  float edge = smoothstep(r - band - 1.0, r - 0.6, d) * inside;
+  float lit = clamp(dot(normalize(v_offset + vec2(1e-4)), normalize(LIGHT.xy)) * 0.5 + 0.5, 0.0, 1.0);
+  body = mix(body, mix(body, vec3(1.0), dark ? 0.42 : 0.26), edge * lit * lit);
+
+  // A crisp rim that carries the outline of a level drawn as context (a
+  // Package's territory).
   float rimWidth = min(1.4, r * 0.35);
   float rim = inside * smoothstep(r - rimWidth - 1.0, r - rimWidth, d);
-  vec3 rimColor = u_dark > 0.5 ? mix(body, vec3(1.0), 0.22) : mix(body, vec3(0.0), 0.18);
+  vec3 rimColor = dark ? mix(base, vec3(1.0), 0.28) : mix(base, vec3(0.0), 0.22);
   float fillAlpha = v_style.w > 0.5 ? 0.06 : 1.0;
   float bodyA = inside * v_alpha * mix(fillAlpha, min(1.0, mix(1.0, 3.2, v_context)), rim);
   vec3 bodyColor = mix(body, rimColor, rim);
 
-  // Glow: a gaussian halo outside the disc, mostly additive on dark themes.
+  // Glow: a bloom outside the disc, a bright core and a wide halo, that
+  // breathes; mostly additive on the dark theme.
   float glowA = 0.0;
   if (v_style.y > 0.0) {
-    float x = max(d - r, 0.0) / v_style.y;
-    glowA = exp(-x * x * 3.5) * (1.0 - inside) * 0.55 * v_alpha;
+    float x = max(d - r, 0.0);
+    float g = v_style.y * mix(0.92, 1.08, v_pulse - 0.78);
+    float core = exp(-pow(x / (g * 0.28), 2.0));
+    float halo = exp(-x / (g * 0.4));
+    glowA = (core * 0.42 + halo * 0.3) * v_pulse * (1.0 - inside) * v_alpha;
   }
-  vec3 glowColor = min(v_color.rgb * 1.25, vec3(1.0));
+  vec3 glowColor = min(v_color.rgb * 1.3 + 0.06, vec3(1.0));
+
+  // Shadow: on paper, a disc stands a little off the page.
+  float shadowA = 0.0;
+  if (!dark && v_style.w < 0.5) {
+    float blur = min(8.0, 1.5 + r * 0.15);
+    float ds = length(v_offset - vec2(0.0, -min(3.0, 0.8 + r * 0.04)));
+    shadowA = (1.0 - smoothstep(r - blur, r + blur, ds)) * (1.0 - inside) * 0.16 * v_alpha * (1.0 - v_context);
+  }
 
   // Ring: the focus, a search match or a Changes mark.
   float ringA = 0.0;
   if (v_style.z > 0.5) {
     float rr = r + 3.5;
-    ringA = 1.0 - smoothstep(0.6, 1.5, abs(d - rr));
+    ringA = 1.0 - smoothstep(0.7, 1.6, abs(d - rr));
     if (v_style.z > 1.5) {
       float arc = (atan(v_offset.y, v_offset.x) + PI) * rr;
       float m = mod(arc, 7.0);
@@ -174,8 +224,10 @@ void main() {
     ringA *= max(v_ringAlpha, 0.0);
   }
 
-  // Premultiplied, back to front: glow, body, ring.
-  vec4 c = vec4(glowColor * glowA, glowA * (u_dark > 0.5 ? 0.25 : 0.9));
+  // Premultiplied, back to front: shadow, glow, body, ring.
+  vec4 c = vec4(vec3(0.05, 0.08, 0.16) * shadowA, shadowA);
+  vec4 glow = vec4(glowColor * glowA, glowA * (dark ? 0.22 : 0.85));
+  c = glow + c * (1.0 - glow.a);
   c = vec4(bodyColor * bodyA, bodyA) + c * (1.0 - bodyA);
   c = vec4(v_ringColor.rgb * ringA, ringA) + c * (1.0 - ringA);
   gl_FragColor = c;
@@ -184,6 +236,7 @@ void main() {
 `;
 
 const NODE_UNIFORMS = [
+  "u_motion",
   "u_matrix",
   "u_sizeRatio",
   "u_correctionRatio",
@@ -266,6 +319,7 @@ export function createNodeProgram(frame: Frame) {
       gl.uniform3fv(u.u_childReveal!, frame.childReveal);
       gl.uniform1f(u.u_time!, clock());
       gl.uniform1f(u.u_dark!, frame.palette.dark ? 1 : 0);
+      gl.uniform1f(u.u_motion!, frame.motion);
     }
   };
 }
@@ -280,18 +334,20 @@ export function createHoverNodeProgram(frame: Frame) {
   };
 }
 
+/** Segments a Dependency's curve is drawn with. */
+const EDGE_SEGMENTS = 14;
+
 const EDGE_VERTEX = /* glsl */ `
 attribute vec4 a_id;
 attribute vec4 a_color;
 attribute vec2 a_positionStart;
 attribute vec2 a_positionEnd;
-attribute vec2 a_normal;       // unit
 attribute float a_thickness;   // screen pixels
 attribute vec3 a_fade;
 attribute vec2 a_style;        // level, kind (0 runtime, 1 type-only, 2 dynamic)
 attribute vec2 a_radii;        // of the source and target discs, map units
-attribute float a_positionCoef;
-attribute float a_normalCoef;
+attribute float a_t;           // 0 at the importer, 1 at the imported
+attribute float a_side;        // -1 or 1 across
 
 uniform mat3 u_matrix;
 uniform float u_correctionRatio;
@@ -305,6 +361,12 @@ ${COMMON}
 const float MIN_LENGTH = 16.0;
 // The gap left between a Dependency's end and its disc, in pixels.
 const float END_GAP = 1.5;
+// How far a Dependency bows to its left, as a share of its length: the two
+// directions between two Modules take two arcs.
+const float BEND = 0.14;
+// Its width at the imported end, as a share of the importer's: the taper
+// that tells the direction.
+const float TAPER = 0.4;
 
 varying vec4 v_color;
 varying float v_alpha;
@@ -317,8 +379,6 @@ const float bias = 255.0 / 254.0;
 
 void main() {
   float alpha = fadeAt(a_fade) * levelWeight(a_style.x);
-  float width = a_style.y > 1.5 ? max(a_thickness, 2.2) : a_thickness;
-  float halfPx = width * 0.5 + 1.0;
 
   // From disc boundary to disc boundary, so that a Dependency is drawn
   // where it can be seen, above the discs, without covering its own ends.
@@ -332,25 +392,43 @@ void main() {
   float minLength = MIN_LENGTH * px;
   vec2 start = a_positionStart + dir * rs;
   vec2 end = a_positionEnd - dir * rt;
+  float bend = BEND;
   if (gap < minLength) {
     vec2 middle = a_positionStart + dir * (rs + gap * 0.5);
     start = middle - dir * minLength * 0.5;
     end = middle + dir * minLength * 0.5;
+    bend = 0.0;
   }
 
-  vec2 position = mix(start, end, a_positionCoef);
-  vec2 normal = a_normal * a_normalCoef;
+  // A quadratic arc bowing to the left of the direction.
+  vec2 chord = end - start;
+  float len = length(chord);
+  vec2 left = vec2(-dir.y, dir.x);
+  vec2 ctrl = (start + end) * 0.5 + left * len * bend;
+  float t = a_t;
+  vec2 p = mix(mix(start, ctrl, t), mix(ctrl, end, t), t);
+  vec2 tangent = 2.0 * (1.0 - t) * (ctrl - start) + 2.0 * t * (end - ctrl);
+  tangent = length(tangent) > 0.0 ? normalize(tangent) : dir;
+  vec2 normal = vec2(-tangent.y, tangent.x);
+
+  float base = a_style.y > 1.5 ? max(a_thickness, 2.2) : a_thickness;
+  float width = max(base * mix(1.0, TAPER, t), 0.75);
+  float halfPx = width * 0.5 + 1.0;
+
   gl_Position = alpha > 0.004
-    ? vec4((u_matrix * vec3(position + normal * halfPx * px, 1)).xy, 0, 1)
+    ? vec4((u_matrix * vec3(p + normal * a_side * halfPx * px, 1)).xy, 0, 1)
     : vec4(2.0, 2.0, 2.0, 1.0);
 
+  // Arc length on screen, near enough for the dash pattern.
   vec2 s = (u_matrix * vec3(start, 1)).xy;
   vec2 e = (u_matrix * vec3(end, 1)).xy;
-  v_along = a_positionCoef * length((e - s) * u_dimensions * 0.5);
-  v_across = a_normalCoef * halfPx;
+  float lengthPx = length((e - s) * u_dimensions * 0.5) * (1.0 + 2.667 * bend * bend);
+  v_along = t * lengthPx;
+  v_across = a_side * halfPx;
   v_half = width * 0.5;
   v_kind = a_style.y;
-  v_alpha = alpha;
+  // A little stronger towards the imported end, with the taper.
+  v_alpha = alpha * mix(0.72, 1.0, t);
 
   #ifdef PICKING_MODE
   v_color = a_id;
@@ -392,6 +470,18 @@ void main() {
 }
 `;
 
+/** Per vertex: where along the arc (t) and on which side. */
+function edgeVertices(): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < EDGE_SEGMENTS; i++) {
+    const t0 = i / EDGE_SEGMENTS;
+    const t1 = (i + 1) / EDGE_SEGMENTS;
+    out.push([t0, 1], [t0, -1], [t1, 1], [t1, 1], [t0, -1], [t1, -1]);
+  }
+  return out;
+}
+const EDGE_VERTEX_DATA = edgeVertices();
+
 const EDGE_UNIFORMS = [
   "u_matrix",
   "u_correctionRatio",
@@ -408,7 +498,7 @@ export function createEdgeProgram(frame: Frame) {
   > {
     getDefinition() {
       return {
-        VERTICES: 6,
+        VERTICES: EDGE_VERTEX_DATA.length,
         VERTEX_SHADER_SOURCE: EDGE_VERTEX,
         FRAGMENT_SHADER_SOURCE: EDGE_FRAGMENT,
         METHOD: TRIANGLES,
@@ -416,7 +506,6 @@ export function createEdgeProgram(frame: Frame) {
         ATTRIBUTES: [
           { name: "a_positionStart", size: 2, type: FLOAT },
           { name: "a_positionEnd", size: 2, type: FLOAT },
-          { name: "a_normal", size: 2, type: FLOAT },
           { name: "a_color", size: 4, type: UNSIGNED_BYTE, normalized: true },
           { name: "a_id", size: 4, type: UNSIGNED_BYTE, normalized: true },
           { name: "a_thickness", size: 1, type: FLOAT },
@@ -425,17 +514,10 @@ export function createEdgeProgram(frame: Frame) {
           { name: "a_radii", size: 2, type: FLOAT },
         ],
         CONSTANT_ATTRIBUTES: [
-          { name: "a_positionCoef", size: 1, type: FLOAT },
-          { name: "a_normalCoef", size: 1, type: FLOAT },
+          { name: "a_t", size: 1, type: FLOAT },
+          { name: "a_side", size: 1, type: FLOAT },
         ],
-        CONSTANT_DATA: [
-          [0, 1],
-          [0, -1],
-          [1, 1],
-          [1, 1],
-          [0, -1],
-          [1, -1],
-        ],
+        CONSTANT_DATA: EDGE_VERTEX_DATA,
       };
     }
 
@@ -447,17 +529,12 @@ export function createEdgeProgram(frame: Frame) {
       data: object,
     ) {
       const d = data as EdgeAttributes;
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const len = Math.hypot(dx, dy) || 1;
       const a = this.array;
       let i = startIndex;
       a[i++] = source.x;
       a[i++] = source.y;
       a[i++] = target.x;
       a[i++] = target.y;
-      a[i++] = -dy / len;
-      a[i++] = dx / len;
       a[i++] = floatColor(d.color);
       a[i++] = edgeIndex;
       a[i++] = d.size;

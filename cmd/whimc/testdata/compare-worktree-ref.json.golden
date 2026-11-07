@@ -2,13 +2,13 @@
   "base": "main~1",
   "target": "worktree",
   "summary": {
-    "filesChanged": 5,
+    "filesChanged": 4,
     "filesAdded": 2,
-    "filesModified": 2,
+    "filesModified": 1,
     "filesRemoved": 1,
     "packagesTouched": 2,
     "dependenciesAdded": 2,
-    "dependenciesRemoved": 1
+    "dependenciesRemoved": 0
   },
   "packages": {
     "level": "packages",
@@ -19,11 +19,11 @@
         "name": "core",
         "path": "packages/core",
         "change": "modified",
-        "changed": 3,
+        "changed": 2,
         "added": 1,
-        "modified": 1,
+        "modified": 0,
         "removed": 1,
-        "size": 4,
+        "size": 3,
         "x": 0,
         "y": 0,
         "radius": 0
@@ -66,11 +66,11 @@
         "path": "packages/core/src",
         "parent": "pkg:packages/core",
         "change": "modified",
-        "changed": 3,
+        "changed": 2,
         "added": 1,
-        "modified": 1,
+        "modified": 0,
         "removed": 1,
-        "size": 4,
+        "size": 3,
         "x": 0,
         "y": 0,
         "radius": 0
@@ -140,23 +140,6 @@
         "radius": 0
       },
       {
-        "id": "file:packages/core/src/money.test.ts",
-        "level": "files",
-        "name": "money.test.ts",
-        "path": "packages/core/src/money.test.ts",
-        "parent": "dir:packages/core/src",
-        "change": "modified",
-        "test": true,
-        "changed": 1,
-        "added": 0,
-        "modified": 1,
-        "removed": 0,
-        "size": 1,
-        "x": 0,
-        "y": 0,
-        "radius": 0
-      },
-      {
         "id": "file:packages/core/src/tax.ts",
         "level": "files",
         "name": "tax.ts",
@@ -206,15 +189,6 @@
       }
     ],
     "dependencies": [
-      {
-        "from": "file:packages/core/src/money.test.ts",
-        "to": "file:packages/core/src/money.ts",
-        "change": "removed",
-        "kind": "runtime",
-        "weight": 1,
-        "added": 0,
-        "removed": 1
-      },
       {
         "from": "file:packages/web/lib/format.ts",
         "to": "file:packages/core/src/money.ts",

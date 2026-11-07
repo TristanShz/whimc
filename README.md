@@ -48,7 +48,7 @@ The first run of a large repository shows the Packages, Directories and Files ri
 ### `whimc compare`
 
 ```sh
-whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
+whimc compare [--base REF] [--target REF] [--json] [--tests] [path]
 ```
 
 Prints the Comparison of two States in the terminal: the Files changed, added, modified and removed, the Packages touched with their Files, and the Dependencies added and removed.
@@ -56,7 +56,7 @@ Prints the Comparison of two States in the terminal: the Files changed, added, m
 - `--base REF` is the State compared from, `HEAD` by default.
 - `--target REF` is the State compared to, the working tree by default.
 - `--json` prints the Comparison as JSON instead: a `summary`, then the changed Modules and Dependencies at each level (`packages`, `directories`, `files`). An agent can call `whimc compare --json` at the end of a task to review its own changes.
-- `--tests=false` leaves test Files out (they are included by default).
+- `--tests` includes test Files. They are left out by default, as on the Map, so that the terminal and the Map agree.
 
 A REF is anything git resolves to a commit (a commit hash, a branch, a tag, `HEAD~3`), or `worktree` for the working tree as it is on disk, untracked Files included. The Map's ref pickers take the same refs.
 

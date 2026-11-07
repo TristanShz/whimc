@@ -1,13 +1,9 @@
 Comparison of HEAD with worktree
 
-3 Files changed: 1 added, 1 modified, 1 removed
+2 Files changed: 1 added, 0 modified, 1 removed
 1 Package touched
-Dependencies: 0 added, 1 removed
+Dependencies: 0 added, 0 removed
 
-core (packages/core), modified: 1 added, 1 modified, 1 removed
+core (packages/core), modified: 1 added, 0 modified, 1 removed
   D packages/core/src/legacy.ts
-  M packages/core/src/money.test.ts (test)
   A packages/core/src/tax.ts
-
-Dependencies between Files
-  D packages/core/src/money.test.ts -> packages/core/src/money.ts (runtime)

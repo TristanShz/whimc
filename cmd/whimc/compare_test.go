@@ -53,7 +53,7 @@ func TestCompareGolden(t *testing.T) {
 		args []string
 	}{
 		{"head-worktree", nil},
-		{"head-worktree-no-tests", []string{"--tests=false"}},
+		{"head-worktree-tests", []string{"--tests"}},
 		{"two-commits", []string{"--base", "v1", "--target", "main"}},
 		{"worktree-ref", []string{"--base", "main~1", "--target", "worktree"}},
 		{"no-changes", []string{"--base", "main", "--target", "HEAD"}},

@@ -1,7 +1,7 @@
 // Command whimc indexes a repository and shows it as one zoomable Map.
 //
 //	whimc serve   [--port N] [--no-open] [path]
-//	whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
+//	whimc compare [--base REF] [--target REF] [--json] [--tests] [path]
 //	whimc version
 package main
 
@@ -18,13 +18,13 @@ import (
 
 const usage = `Usage:
   whimc serve   [--port N] [--no-open] [path]          open the Map of the repository in the browser
-  whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
+  whimc compare [--base REF] [--target REF] [--json] [--tests] [path]
                                                        print what changed between two States
   whimc version                                        print the version of whimc
 
 path defaults to the current directory. REF is a commit, branch or tag, or
 "worktree" (or empty) for the working tree. compare defaults to HEAD against
-the working tree, untracked Files included; --tests=false leaves test Files out.
+the working tree, untracked Files included; --tests includes test Files.
 `
 
 // version is the release version, stamped by the release build with

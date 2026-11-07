@@ -16,7 +16,7 @@ func compare(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	base := fs.String("base", "HEAD", `base State: a commit, branch or tag, or "worktree"`)
 	target := fs.String("target", engine.WorktreeRef, `target State: a commit, branch or tag, or "worktree"`)
 	asJSON := fs.Bool("json", false, "print the Comparison as JSON")
-	tests := fs.Bool("tests", true, "include test Files")
+	tests := fs.Bool("tests", false, "include test Files, which the Map also hides by default")
 	path, err := parse(fs, args)
 	if err != nil {
 		return err

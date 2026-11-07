@@ -107,17 +107,30 @@ func LanguageOf(p string) Language {
 	return TypeScript
 }
 
+// Grammar names the grammar the File at p is parsed with: "go", "ts" or
+// "tsx". A Result depends only on the content and the grammar.
+func Grammar(p string) string {
+	switch {
+	case LanguageOf(p) == Go:
+		return "go"
+	case strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".mts") || strings.HasSuffix(p, ".cts"):
+		return "ts"
+	default: // .tsx and every JS flavour: the TSX grammar also reads JSX
+		return "tsx"
+	}
+}
+
 // File parses the content of the File at p.
 func File(p string, content []byte) Result {
 	lang := LanguageOf(p)
 	r := Result{Language: lang, Lines: lineCount(content)}
 	var grammar *ts.Language
-	switch {
-	case lang == Go:
+	switch Grammar(p) {
+	case "go":
 		grammar = ts.NewLanguage(tsgo.Language())
-	case strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".mts") || strings.HasSuffix(p, ".cts"):
+	case "ts":
 		grammar = ts.NewLanguage(tsts.LanguageTypescript())
-	default: // .tsx and every JS flavour: the TSX grammar also reads JSX
+	default:
 		grammar = ts.NewLanguage(tsts.LanguageTSX())
 	}
 	parser := ts.NewParser()

@@ -8,9 +8,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/TristanShz/whimc/internal/gitrepo"
+	"github.com/TristanShz/whimc/internal/index"
 	"github.com/TristanShz/whimc/internal/modules"
 	"github.com/TristanShz/whimc/internal/parse"
 )
@@ -38,8 +40,20 @@ type Workspace interface {
 	Compare(ctx context.Context, base, target State) (Comparison, error)
 	// Changes streams index updates (first run progress, working-tree edits).
 	Changes(ctx context.Context) (<-chan Update, error)
-	// Close releases the git processes held by the Workspace.
+	// Stats reports the work the Workspace did since it was opened.
+	Stats() Stats
+	// Close releases the git processes and the index held by the Workspace.
 	Close() error
+}
+
+// Stats counts the work a Workspace did, to observe what the index saves.
+type Stats struct {
+	// ParsedBlobs is the number of blobs parsed: the ones the index did not
+	// know yet.
+	ParsedBlobs int
+	// DiffedCommits is the number of commits whose touched paths were read
+	// from git for Churn: the ones the index did not know yet.
+	DiffedCommits int
 }
 
 // Options tunes a Workspace. The zero value is the default.
@@ -48,6 +62,9 @@ type Options struct {
 	ChurnWindow time.Duration
 	// Now is the clock the Churn window ends at: time.Now when nil.
 	Now func() time.Time
+	// CacheDir is where the indexes of repositories are kept, one directory
+	// per repository: whimc's folder in the user cache directory when empty.
+	CacheDir string
 }
 
 // DefaultChurnWindow is the Churn window when Options leaves it zero.
@@ -183,12 +200,40 @@ func Open(ctx context.Context, repoPath string, opts Options) (Workspace, error)
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &workspace{repo: repo, opts: opts}, nil
+	ix, err := openIndex(ctx, repo, opts.CacheDir)
+	if err != nil {
+		repo.Close()
+		return nil, err
+	}
+	return &workspace{repo: repo, ix: ix, opts: opts}, nil
+}
+
+// openIndex opens the index of repo, shared by all its worktrees.
+func openIndex(ctx context.Context, repo *gitrepo.Repo, cacheDir string) (*index.Index, error) {
+	if cacheDir == "" {
+		var err error
+		if cacheDir, err = index.DefaultCacheDir(); err != nil {
+			return nil, err
+		}
+	}
+	common, err := repo.CommonDir(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return index.Open(index.Dir(cacheDir, common))
 }
 
 type workspace struct {
 	repo *gitrepo.Repo
+	ix   *index.Index
 	opts Options
+
+	parsedBlobs   atomic.Int64
+	diffedCommits atomic.Int64
+}
+
+func (w *workspace) Stats() Stats {
+	return Stats{ParsedBlobs: int(w.parsedBlobs.Load()), DiffedCommits: int(w.diffedCommits.Load())}
 }
 
 func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, error) {
@@ -228,4 +273,4 @@ func (w *workspace) Changes(ctx context.Context) (<-chan Update, error) {
 	return nil, fmt.Errorf("changes: %w", ErrNotImplemented)
 }
 
-func (w *workspace) Close() error { return w.repo.Close() }
+func (w *workspace) Close() error { return errors.Join(w.repo.Close(), w.ix.Close()) }

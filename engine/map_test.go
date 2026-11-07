@@ -18,9 +18,13 @@ func open(t *testing.T, r *testrepo.Repo) engine.Workspace {
 }
 
 // openWith opens the fixture repository with opts as a Workspace closed at
-// the end of the test.
+// the end of the test. Its index goes to a temporary cache unless opts names
+// one.
 func openWith(t *testing.T, r *testrepo.Repo, opts engine.Options) engine.Workspace {
 	t.Helper()
+	if opts.CacheDir == "" {
+		opts.CacheDir = t.TempDir()
+	}
 	ws, err := engine.Open(context.Background(), r.Dir, opts)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

@@ -74,6 +74,20 @@ func Open(ctx context.Context, path string) (*Repo, error) {
 // Root is the absolute path of the work tree.
 func (r *Repo) Root() string { return r.root }
 
+// CommonDir returns the absolute, symlink-free path of the repository's
+// common git directory: the same for every worktree of the repository.
+func (r *Repo) CommonDir(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	dir, err := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
+	if err != nil {
+		return "", fmt.Errorf("resolve the git directory: %w", err)
+	}
+	return dir, nil
+}
+
 // ResolveCommit turns a commit, branch or tag into a commit hash.
 func (r *Repo) ResolveCommit(ctx context.Context, ref string) (string, error) {
 	out, err := r.run(ctx, "rev-parse", "--verify", "--quiet", "--end-of-options", ref+"^{commit}")

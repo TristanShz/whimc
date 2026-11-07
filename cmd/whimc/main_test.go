@@ -34,6 +34,7 @@ func TestCompareWithoutGitPrintsTheErrorAndFails(t *testing.T) {
 }
 
 func TestServeListsThePackagesOfTheRepository(t *testing.T) {
+	isolateUserCache(t)
 	r := testrepo.New(t)
 	r.WriteFiles(map[string]string{
 		"go.mod":  "module example.com/shop\n",
@@ -60,4 +61,12 @@ func TestUnknownCommandShowsUsage(t *testing.T) {
 	if code != 2 || !strings.Contains(stderr.String(), "Usage") {
 		t.Fatalf("exit code = %d, stderr = %q, want 2 and the usage", code, stderr.String())
 	}
+}
+
+// isolateUserCache points the user cache, where the index goes, at a
+// temporary directory.
+func isolateUserCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", home+"/.cache")
 }

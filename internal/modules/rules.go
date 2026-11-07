@@ -19,6 +19,9 @@ const (
 	ManifestFile
 	// SourceFile is a File of a supported language.
 	SourceFile
+	// ConfigFile configures how imports resolve: `tsconfig*.json` and
+	// `jsconfig*.json`.
+	ConfigFile
 )
 
 var supportedExtensions = map[string]bool{
@@ -44,6 +47,9 @@ func Classify(p string) Kind {
 	base := segments[len(segments)-1]
 	if base == "package.json" || base == "go.mod" {
 		return ManifestFile
+	}
+	if (strings.HasPrefix(base, "tsconfig") || strings.HasPrefix(base, "jsconfig")) && path.Ext(base) == ".json" {
+		return ConfigFile
 	}
 	if supportedExtensions[path.Ext(base)] {
 		return SourceFile

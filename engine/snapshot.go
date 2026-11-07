@@ -8,6 +8,8 @@ import (
 
 	"github.com/TristanShz/whimc/internal/gitrepo"
 	"github.com/TristanShz/whimc/internal/modules"
+	"github.com/TristanShz/whimc/internal/parse"
+	"github.com/TristanShz/whimc/internal/resolve"
 )
 
 // source is how the content of a State's Files is read.
@@ -69,8 +71,15 @@ func (w *workspace) sourceOf(ctx context.Context, at State) (source, error) {
 	return newCommitSource(ctx, w.repo, commit)
 }
 
-// tree builds the Module hierarchy of a State.
-func (w *workspace) tree(ctx context.Context, at State) (*modules.Tree, error) {
+// snapshot is the analysed form of one State.
+type snapshot struct {
+	tree *modules.Tree
+	deps []modules.Edge
+}
+
+// snapshot builds the Module hierarchy of a State and resolves its File
+// Dependencies.
+func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 	src, err := w.sourceOf(ctx, at)
 	if err != nil {
 		return nil, err
@@ -81,6 +90,8 @@ func (w *workspace) tree(ctx context.Context, at State) (*modules.Tree, error) {
 	}
 	var manifests []modules.Manifest
 	var files []modules.File
+	parsed := map[string]parse.Result{}
+	configs := map[string][]byte{}
 	for _, p := range paths {
 		kind := modules.Classify(p)
 		if kind == modules.Ignored {
@@ -94,7 +105,10 @@ func (w *workspace) tree(ctx context.Context, at State) (*modules.Tree, error) {
 			return nil, fmt.Errorf("read %s: %w", p, err)
 		}
 		switch kind {
+		case modules.ConfigFile:
+			configs[p] = content
 		case modules.ManifestFile:
+			configs[p] = content
 			manifests = append(manifests, modules.Manifest{Dir: path.Dir(p), Name: modules.ManifestName(p, content)})
 		case modules.SourceFile:
 			facts := modules.Analyze(content)
@@ -102,7 +116,12 @@ func (w *workspace) tree(ctx context.Context, at State) (*modules.Tree, error) {
 				continue
 			}
 			files = append(files, modules.File{Path: p, Size: facts.Size, Test: modules.IsTest(p)})
+			parsed[p] = parse.File(p, content)
 		}
 	}
-	return modules.Build(filepath.Base(w.repo.Root()), manifests, files), nil
+	snap := &snapshot{tree: modules.Build(filepath.Base(w.repo.Root()), manifests, files)}
+	for _, d := range resolve.Resolve(resolve.Snapshot{Files: parsed, Configs: configs}) {
+		snap.deps = append(snap.deps, modules.Edge{From: d.From, To: d.To, Kind: d.Kind})
+	}
+	return snap, nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/TristanShz/whimc/internal/gitrepo"
 	"github.com/TristanShz/whimc/internal/modules"
+	"github.com/TristanShz/whimc/internal/parse"
 )
 
 var (
@@ -85,6 +86,50 @@ type MapQuery struct {
 type MapView struct {
 	Level   Level
 	Modules []Module
+	// Dependencies are the Dependencies between the Modules of the view,
+	// aggregated to its level, sorted by From then To.
+	Dependencies []Dependency
+}
+
+// DependencyKind is how a Dependency is imported.
+type DependencyKind int
+
+const (
+	// Runtime Dependencies load the imported module when the importer runs.
+	Runtime DependencyKind = DependencyKind(parse.Runtime)
+	// TypeOnly Dependencies vanish at runtime (`import type`).
+	TypeOnly DependencyKind = DependencyKind(parse.TypeOnly)
+	// Dynamic Dependencies load the module lazily (`import()`).
+	Dynamic DependencyKind = DependencyKind(parse.Dynamic)
+)
+
+func (k DependencyKind) String() string {
+	switch k {
+	case Runtime:
+		return "runtime"
+	case TypeOnly:
+		return "type-only"
+	case Dynamic:
+		return "dynamic"
+	}
+	return fmt.Sprintf("DependencyKind(%d)", int(k))
+}
+
+// KindCounts counts the File Dependencies of an aggregate by kind.
+type KindCounts struct{ Runtime, TypeOnly, Dynamic int }
+
+// Dependency is an edge of the Map: From imports what To defines. Between
+// Files, it stands for every import of one File resolving to the other;
+// between Directories or Packages, it aggregates the File Dependencies from
+// one Module's Files to the other's.
+type Dependency struct {
+	From, To string // Module IDs
+	// Kind is runtime if any aggregated File Dependency is runtime, else
+	// type-only if any is, else dynamic.
+	Kind DependencyKind
+	// Weight is the number of File Dependencies aggregated: 1 between Files.
+	Weight int
+	Counts KindCounts
 }
 
 // Module is a node of the Map: a Package, a Directory or a File.
@@ -134,17 +179,24 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 	if q.Viewport != nil {
 		return MapView{}, fmt.Errorf("map: viewport filtering comes with the layout: %w", ErrNotImplemented)
 	}
-	tree, err := w.tree(ctx, at)
+	snap, err := w.snapshot(ctx, at)
 	if err != nil {
 		return MapView{}, fmt.Errorf("map: %w", err)
 	}
-	nodes := tree.Nodes(modules.Query{Level: modules.Level(q.Level), Within: q.Within, Tests: q.Tests})
+	mq := modules.Query{Level: modules.Level(q.Level), Within: q.Within, Tests: q.Tests}
+	nodes := snap.tree.Nodes(mq)
 	view := MapView{Level: q.Level, Modules: make([]Module, len(nodes))}
 	for i, n := range nodes {
 		view.Modules[i] = Module{
 			ID: n.ID, Level: Level(n.Level), Name: n.Name, Path: n.Path, Parent: n.Parent,
 			Size: n.Size, Children: n.Children, Test: n.Test,
 		}
+	}
+	for _, d := range snap.tree.Dependencies(mq, nodes, snap.deps) {
+		view.Dependencies = append(view.Dependencies, Dependency{
+			From: d.From, To: d.To, Kind: DependencyKind(d.Kind), Weight: d.Weight,
+			Counts: KindCounts(d.Counts),
+		})
 	}
 	return view, nil
 }

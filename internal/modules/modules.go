@@ -56,6 +56,7 @@ type Node struct {
 type Tree struct {
 	packages map[string]*pkg // by folder path
 	files    []placedFile    // sorted by path
+	byPath   map[string]int  // index in files
 }
 
 type pkg struct {
@@ -105,6 +106,10 @@ func Build(rootName string, manifests []Manifest, files []File) *Tree {
 		}
 	}
 	sort.Slice(t.files, func(i, j int) bool { return t.files[i].Path < t.files[j].Path })
+	t.byPath = make(map[string]int, len(t.files))
+	for i, f := range t.files {
+		t.byPath[f.Path] = i
+	}
 	return t
 }
 

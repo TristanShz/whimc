@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -258,4 +259,104 @@ func (c *catFile) read(blob string) ([]byte, error) {
 func (c *catFile) close() error {
 	c.in.Close()
 	return c.cmd.Wait()
+}
+
+// Head returns the commit HEAD points at, or "" when the repository has no
+// commit yet.
+func (r *Repo) Head(ctx context.Context) (string, error) {
+	out, err := r.run(ctx, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	if err != nil {
+		if _, err := r.run(ctx, "rev-parse", "--git-dir"); err != nil {
+			return "", err
+		}
+		return "", nil // unborn branch
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// Stamp is a commit and its committer date, in Unix seconds.
+type Stamp struct {
+	Hash string
+	Time int64
+}
+
+// CommitsSince returns the commits reachable from commit whose committer
+// date is not before since, children before their parents.
+func (r *Repo) CommitsSince(ctx context.Context, commit string, since time.Time) ([]Stamp, error) {
+	out, err := r.run(ctx, "rev-list", "--topo-order", "--timestamp",
+		"--since="+strconv.FormatInt(since.Unix()-1, 10), commit, "--")
+	if err != nil {
+		return nil, err
+	}
+	var stamps []Stamp
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		ts, hash, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		t, err := strconv.ParseInt(ts, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("git rev-list: bad line %q", line)
+		}
+		if t >= since.Unix() {
+			stamps = append(stamps, Stamp{Hash: hash, Time: t})
+		}
+	}
+	return stamps, nil
+}
+
+// Change is a path a commit touched, against its first parent. Status is
+// git's: 'A', 'M', 'D', 'T', 'R' (renamed from From) or 'C' (copied from
+// From).
+type Change struct {
+	Status byte   `json:"s"`
+	Path   string `json:"p"`
+	From   string `json:"f,omitempty"`
+}
+
+// Changes returns the paths each commit touched, renames detected. Merge
+// commits touch nothing.
+func (r *Repo) Changes(ctx context.Context, commits []string) (map[string][]Change, error) {
+	result := make(map[string][]Change, len(commits))
+	if len(commits) == 0 {
+		return result, nil
+	}
+	cmd := exec.CommandContext(ctx, r.git, "log", "--no-walk=unsorted", "--stdin", "--root",
+		"--no-show-signature", "-M", "--name-status", "-z", "--no-color", "--format=%x01%H")
+	cmd.Dir = r.root
+	cmd.Stdin = strings.NewReader(strings.Join(commits, "\n") + "\n")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	// Records: "\x01<hash>", then "<status>", "<path>" or "<status>",
+	// "<from>", "<path>" for renames and copies; the first status after a
+	// header starts with a newline.
+	tokens := strings.Split(string(out), "\x00")
+	var current string
+	for i := 0; i < len(tokens); i++ {
+		tok := strings.TrimLeft(tokens[i], "\n")
+		switch {
+		case tok == "":
+			continue
+		case tok[0] == '\x01':
+			current = tok[1:]
+			result[current] = nil
+		case tok[0] == 'R' || tok[0] == 'C':
+			if i+2 >= len(tokens) {
+				return nil, fmt.Errorf("git log: truncated record in %s", current)
+			}
+			result[current] = append(result[current], Change{Status: tok[0], From: tokens[i+1], Path: tokens[i+2]})
+			i += 2
+		default:
+			if i+1 >= len(tokens) {
+				return nil, fmt.Errorf("git log: truncated record in %s", current)
+			}
+			result[current] = append(result[current], Change{Status: tok[0], Path: tokens[i+1]})
+			i++
+		}
+	}
+	return result, nil
 }

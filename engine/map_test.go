@@ -14,7 +14,14 @@ import (
 // open opens the fixture repository as a Workspace closed at the end of the test.
 func open(t *testing.T, r *testrepo.Repo) engine.Workspace {
 	t.Helper()
-	ws, err := engine.Open(context.Background(), r.Dir, engine.Options{})
+	return openWith(t, r, engine.Options{})
+}
+
+// openWith opens the fixture repository with opts as a Workspace closed at
+// the end of the test.
+func openWith(t *testing.T, r *testrepo.Repo, opts engine.Options) engine.Workspace {
+	t.Helper()
+	ws, err := engine.Open(context.Background(), r.Dir, opts)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

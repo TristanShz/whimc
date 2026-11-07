@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/TristanShz/whimc/internal/gitrepo"
 	"github.com/TristanShz/whimc/internal/modules"
@@ -42,7 +43,15 @@ type Workspace interface {
 }
 
 // Options tunes a Workspace. The zero value is the default.
-type Options struct{}
+type Options struct {
+	// ChurnWindow is how far back Churn counts commits: 90 days when zero.
+	ChurnWindow time.Duration
+	// Now is the clock the Churn window ends at: time.Now when nil.
+	Now func() time.Time
+}
+
+// DefaultChurnWindow is the Churn window when Options leaves it zero.
+const DefaultChurnWindow = 90 * 24 * time.Hour
 
 // Level is a level of the Module hierarchy.
 type Level int
@@ -144,6 +153,10 @@ type Module struct {
 	Parent string
 	// Size is the number of non-blank lines, summed over the Module's Files.
 	Size int
+	// Churn is the number of commits that touched the Module within the
+	// Churn window, renames followed. For a Directory or a Package, a commit
+	// touching several of its Files counts once.
+	Churn int
 	// Children is the number of Modules one level down.
 	Children int
 	// Test is set on test Files.
@@ -163,6 +176,12 @@ func Open(ctx context.Context, repoPath string, opts Options) (Workspace, error)
 	repo, err := gitrepo.Open(ctx, repoPath)
 	if err != nil {
 		return nil, err
+	}
+	if opts.ChurnWindow <= 0 {
+		opts.ChurnWindow = DefaultChurnWindow
+	}
+	if opts.Now == nil {
+		opts.Now = time.Now
 	}
 	return &workspace{repo: repo, opts: opts}, nil
 }
@@ -189,7 +208,7 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 	for i, n := range nodes {
 		view.Modules[i] = Module{
 			ID: n.ID, Level: Level(n.Level), Name: n.Name, Path: n.Path, Parent: n.Parent,
-			Size: n.Size, Children: n.Children, Test: n.Test,
+			Size: n.Size, Churn: n.Churn, Children: n.Children, Test: n.Test,
 		}
 	}
 	for _, d := range snap.tree.Dependencies(mq, nodes, snap.deps) {

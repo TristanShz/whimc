@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/TristanShz/whimc/internal/churn"
 	"github.com/TristanShz/whimc/internal/gitrepo"
 	"github.com/TristanShz/whimc/internal/modules"
 	"github.com/TristanShz/whimc/internal/parse"
@@ -59,16 +60,20 @@ func (s *commitSource) read(p string) ([]byte, string, error) {
 	return content, blob, err
 }
 
-// sourceOf opens the source of a State.
-func (w *workspace) sourceOf(ctx context.Context, at State) (source, error) {
+// sourceOf opens the source of a State and returns the commit whose history
+// is the State's: the State's own commit, or HEAD for the working tree ("" in
+// a repository without commits).
+func (w *workspace) sourceOf(ctx context.Context, at State) (source, string, error) {
 	if at.Ref == "" {
-		return worktreeSource{w.repo}, nil
+		head, err := w.repo.Head(ctx)
+		return worktreeSource{w.repo}, head, err
 	}
 	commit, err := w.repo.ResolveCommit(ctx, at.Ref)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return newCommitSource(ctx, w.repo, commit)
+	src, err := newCommitSource(ctx, w.repo, commit)
+	return src, commit, err
 }
 
 // snapshot is the analysed form of one State.
@@ -80,7 +85,7 @@ type snapshot struct {
 // snapshot builds the Module hierarchy of a State and resolves its File
 // Dependencies.
 func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
-	src, err := w.sourceOf(ctx, at)
+	src, commit, err := w.sourceOf(ctx, at)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +124,48 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 			parsed[p] = parse.File(p, content)
 		}
 	}
+	if err := w.attributeChurn(ctx, commit, files); err != nil {
+		return nil, fmt.Errorf("churn: %w", err)
+	}
 	snap := &snapshot{tree: modules.Build(filepath.Base(w.repo.Root()), manifests, files)}
 	for _, d := range resolve.Resolve(resolve.Snapshot{Files: parsed, Configs: configs}) {
 		snap.deps = append(snap.deps, modules.Edge{From: d.From, To: d.To, Kind: d.Kind})
 	}
 	return snap, nil
+}
+
+// attributeChurn sets the commits of the Churn window that touched each File,
+// walking the history behind commit.
+func (w *workspace) attributeChurn(ctx context.Context, commit string, files []modules.File) error {
+	if commit == "" {
+		return nil
+	}
+	now := w.opts.Now()
+	stamps, err := w.repo.CommitsSince(ctx, commit, now.Add(-w.opts.ChurnWindow))
+	if err != nil {
+		return err
+	}
+	var hashes []string
+	for _, s := range stamps {
+		if s.Time <= now.Unix() {
+			hashes = append(hashes, s.Hash)
+		}
+	}
+	changes, err := w.repo.Changes(ctx, hashes)
+	if err != nil {
+		return err
+	}
+	commits := make([]churn.Commit, len(hashes))
+	for i, h := range hashes {
+		commits[i] = churn.Commit{Hash: h, Changes: changes[h]}
+	}
+	paths := make([]string, len(files))
+	for i, f := range files {
+		paths[i] = f.Path
+	}
+	touched := churn.Attribute(commits, paths)
+	for i := range files {
+		files[i].Commits = touched[files[i].Path]
+	}
+	return nil
 }

@@ -38,16 +38,21 @@ type File struct {
 	Path string
 	Size int
 	Test bool
+	// Commits identifies the commits of the Churn window that touched the
+	// File, each by a number unique within the State.
+	Commits []int
 }
 
 // Node is a Module as the Map shows it.
 type Node struct {
-	ID       string
-	Level    Level
-	Name     string
-	Path     string
-	Parent   string
-	Size     int
+	ID     string
+	Level  Level
+	Name   string
+	Path   string
+	Parent string
+	Size   int
+	// Churn is the number of distinct commits that touched the Module's Files.
+	Churn    int
 	Children int
 	Test     bool
 }
@@ -140,13 +145,15 @@ func (t *Tree) Nodes(q Query) []Node {
 	withinPkg, withinDir, scoped := t.resolveWithin(q.Within)
 
 	type dirAgg struct {
-		pkg   string
-		size  int
-		files int
+		pkg     string
+		size    int
+		files   int
+		commits map[int]bool
 	}
 	type pkgAgg struct {
-		size int
-		dirs map[string]bool
+		size    int
+		dirs    map[string]bool
+		commits map[int]bool
 	}
 	dirs := map[string]*dirAgg{}
 	pkgs := map[string]*pkgAgg{}
@@ -157,22 +164,26 @@ func (t *Tree) Nodes(q Query) []Node {
 		}
 		d := dirs[f.dir]
 		if d == nil {
-			d = &dirAgg{pkg: f.pkg}
+			d = &dirAgg{pkg: f.pkg, commits: map[int]bool{}}
 			dirs[f.dir] = d
 		}
 		d.size += f.Size
 		d.files++
 		p := pkgs[f.pkg]
 		if p == nil {
-			p = &pkgAgg{dirs: map[string]bool{}}
+			p = &pkgAgg{dirs: map[string]bool{}, commits: map[int]bool{}}
 			pkgs[f.pkg] = p
 		}
 		p.size += f.Size
 		p.dirs[f.dir] = true
+		for _, c := range f.Commits {
+			d.commits[c] = true
+			p.commits[c] = true
+		}
 		if q.Level == Files && (!scoped || f.pkg == withinPkg || f.dir == withinDir) {
 			fileNodes = append(fileNodes, Node{
 				ID: FilePrefix + f.Path, Level: Files, Name: path.Base(f.Path), Path: f.Path,
-				Parent: DirectoryPrefix + f.dir, Size: f.Size, Test: f.Test,
+				Parent: DirectoryPrefix + f.dir, Size: f.Size, Churn: len(f.Commits), Test: f.Test,
 			})
 		}
 	}
@@ -186,7 +197,7 @@ func (t *Tree) Nodes(q Query) []Node {
 		for p, agg := range pkgs {
 			nodes = append(nodes, Node{
 				ID: PackagePrefix + p, Level: Packages, Name: t.packages[p].name, Path: p,
-				Size: agg.size, Children: len(agg.dirs),
+				Size: agg.size, Churn: len(agg.commits), Children: len(agg.dirs),
 			})
 		}
 	case Directories:
@@ -196,7 +207,7 @@ func (t *Tree) Nodes(q Query) []Node {
 			}
 			nodes = append(nodes, Node{
 				ID: DirectoryPrefix + d, Level: Directories, Name: t.directoryName(d, agg.pkg), Path: d,
-				Parent: PackagePrefix + agg.pkg, Size: agg.size, Children: agg.files,
+				Parent: PackagePrefix + agg.pkg, Size: agg.size, Churn: len(agg.commits), Children: agg.files,
 			})
 		}
 	case Files:

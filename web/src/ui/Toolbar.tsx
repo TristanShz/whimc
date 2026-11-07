@@ -1,6 +1,7 @@
 import type { Ref } from "react";
 import { plural } from "../format";
 import { Icon } from "./icons";
+import { nextTheme, themeLabel, type ThemeChoice } from "./themeState";
 
 export interface ToolbarProps {
   search: string;
@@ -15,6 +16,9 @@ export interface ToolbarProps {
   onSearchSubmit(): void;
   onTests(on: boolean): void;
   searchRef: Ref<HTMLInputElement>;
+  /** The theme picked here, or the system's. */
+  theme: ThemeChoice;
+  onTheme(choice: ThemeChoice): void;
 }
 
 export function Toolbar(p: ToolbarProps) {
@@ -77,6 +81,15 @@ export function Toolbar(p: ToolbarProps) {
       >
         <span className="switch-track" aria-hidden="true" />
         Changes
+      </button>
+      <span className="toolbar-divider" aria-hidden="true" />
+      <button
+        className="ghost-button theme-button"
+        aria-label={themeLabel(p.theme)}
+        title={themeLabel(p.theme)}
+        onClick={() => p.onTheme(nextTheme(p.theme))}
+      >
+        <Icon name={p.theme} />
       </button>
     </header>
   );

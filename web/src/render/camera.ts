@@ -46,33 +46,6 @@ export function boundsOf(
   return { x0, y0, x1, y1 };
 }
 
-const GRID_BASE_PX = 24;
-/** Dots per major dot along each axis. */
-export const GRID_MAJOR = 4;
-
-/**
- * The background dot grid: its spacing breathes within one octave as the
- * zoom changes, and its origin follows the map origin on screen, so that
- * panning and zooming feel anchored even over empty space.
- */
-export function dotGrid(
-  zoom: number,
-  originPx: Point,
-): { size: number; x: number; y: number; majorX: number; majorY: number } {
-  const octave = Math.log2(Math.max(zoom, 1e-12));
-  const size = GRID_BASE_PX * 2 ** (octave - Math.floor(octave));
-  const mod = (v: number, m: number) => ((v % m) + m) % m;
-  // Every GRID_MAJOR-th dot is a stronger one, as on a chart.
-  const major = size * GRID_MAJOR;
-  return {
-    size,
-    x: mod(originPx.x, size),
-    y: mod(originPx.y, size),
-    majorX: mod(originPx.x, major),
-    majorY: mod(originPx.y, major),
-  };
-}
-
 /**
  * The area to bring into view to dive into a Module: the whole disc, or
  * closer when that is what it takes for its children to show — a typical

@@ -1,12 +1,10 @@
-// The typography of the Map's labels: one voice per level, so that the
-// hierarchy reads before a word is read. Packages are named like regions on
-// a chart (large, and spaced out once they are only context), Directories
-// like districts, Files in the monospace of paths. Pure, so that it can be
-// tested without a canvas.
+// The typography of the Map's labels: one face, Inter, and a hierarchy
+// carried by weight and tone rather than by size: Packages a little larger
+// and firmer, Directories at 12/500, Files lighter and quieter. Pure, so
+// that it can be tested without a canvas.
 
 export const FONTS = {
-  sans: '"Geist Variable", ui-sans-serif, system-ui, sans-serif',
-  mono: '"Geist Mono Variable", ui-monospace, monospace',
+  sans: '"Inter Variable", ui-sans-serif, system-ui, sans-serif',
 };
 
 /** Which colour of the palette a label takes. */
@@ -36,33 +34,31 @@ export function typography(
   packagesInView: boolean,
 ): Typography {
   if (level === 0 && packagesInView) {
-    const size = Math.round(Math.min(22, Math.max(12.5, 9 + radiusPx * 0.08)));
-    return {
-      css: font(650, size, FONTS.sans),
-      size,
-      tracking: size >= 18 ? -0.2 : 0,
-      tone: "label",
-    };
-  }
-  if (level === 0) {
-    const size = Math.round(Math.min(26, Math.max(13, 8 + radiusPx * 0.03)));
+    const size = radiusPx >= 120 ? 14 : 13;
     return {
       css: font(600, size, FONTS.sans),
       size,
-      tracking: size * 0.08,
-      tone: "muted",
+      tracking: -0.1,
+      tone: "label",
     };
   }
+  if (level === 0)
+    return {
+      css: font(600, 13, FONTS.sans),
+      size: 13,
+      tracking: 0,
+      tone: "muted",
+    };
   if (level === 1)
     return {
-      css: font(560, 12, FONTS.sans),
+      css: font(500, 12, FONTS.sans),
       size: 12,
       tracking: 0,
       tone: "label",
     };
   return {
-    css: font(450, 11, FONTS.mono),
-    size: 11,
+    css: font(450, 12, FONTS.sans),
+    size: 12,
     tracking: 0,
     tone: "quiet",
   };

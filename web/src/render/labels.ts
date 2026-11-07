@@ -95,13 +95,12 @@ const widthKey = (l: LabelSet) => `${l.css}|${l.tracking}|${l.text}`;
 /**
  * The width of a label's text, pixels: measured once its sprite is set,
  * estimated until then (measuring the thousands of labels a level brings
- * would take frames; a monospace estimate is exact).
+ * would take frames).
  */
 function textWidth(l: LabelSet): number {
   const w = widths.get(widthKey(l));
   if (w !== undefined) return w;
-  const em = l.css.includes("Mono") ? 0.6 : 0.56;
-  return l.text.length * (l.size * em + l.tracking);
+  return l.text.length * (l.size * 0.56 + l.tracking);
 }
 
 function measure(l: LabelSet): number {
@@ -177,13 +176,13 @@ function sprite(l: LabelSet): Sprite | null {
   ctx.letterSpacing = `${l.tracking}px`;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  // A soft halo, then a firm one close to the glyphs, then the text: crisp
-  // over discs and Dependencies alike.
+  // A faint wide halo, then a firm one close to the glyphs, then the text:
+  // crisp over outlines and Dependencies alike.
   ctx.lineJoin = "round";
-  ctx.strokeStyle = rgba(l.halo, 0.35);
-  ctx.lineWidth = HALO * 2.6;
+  ctx.strokeStyle = rgba(l.halo, 0.25);
+  ctx.lineWidth = HALO * 2.2;
   ctx.strokeText(l.text, pad, baseline);
-  ctx.strokeStyle = rgba(l.halo, 0.9);
+  ctx.strokeStyle = rgba(l.halo, 0.92);
   ctx.lineWidth = HALO;
   ctx.strokeText(l.text, pad, baseline);
   ctx.fillStyle = toCss(l.color);
@@ -281,8 +280,8 @@ export function flushLabels(ctx: CanvasRenderingContext2D): void {
 }
 
 /**
- * The changed-File count of a changed Directory or Package, on a pill at the
- * top right of its disc.
+ * The changed-File count of a changed Directory or Package, on a small
+ * neutral pill at the top right of its disc: the ring says how it changed.
  */
 function drawBadge(
   ctx: CanvasRenderingContext2D,
@@ -292,20 +291,21 @@ function drawBadge(
   alpha: number,
 ) {
   const h = 16;
-  ctx.font = `650 10px ${FONTS.sans}`;
+  ctx.font = `600 10px ${FONTS.sans}`;
   const w = Math.max(h, ctx.measureText(d.badge).width + 10);
+  const p = frame.palette;
   const cx = d.x + r * 0.71;
   const cy = d.y - r * 0.71;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.beginPath();
-  ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = toCss(frame.palette.halo);
-  ctx.stroke();
-  ctx.fillStyle = d.badgeColor;
+  ctx.roundRect(cx - w / 2 + 0.5, cy - h / 2 + 0.5, w - 1, h - 1, h / 2);
+  ctx.fillStyle = toCss(p.surface);
   ctx.fill();
-  ctx.fillStyle = toCss(frame.palette.canvas);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgba(p.muted, 0.45);
+  ctx.stroke();
+  ctx.fillStyle = toCss(p.label);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(d.badge, cx, cy + 0.5);
@@ -353,40 +353,34 @@ export function createHoverDrawer(frame: Frame): NodeLabelDrawingFunction {
     const p = frame.palette;
     const r = Math.max(d.size, frame.minRadiusPx);
     const title = d.text ?? "";
-    const titleFont = `600 13px ${FONTS.sans}`;
-    const captionFont = `450 11px ${FONTS.mono}`;
+    const titleFont = `600 12px ${FONTS.sans}`;
+    const captionFont = `450 11px ${FONTS.sans}`;
     ctx.font = titleFont;
     const tw = ctx.measureText(title).width;
     ctx.font = captionFont;
     const caption = measures(d.lines, d.commits);
     const cw = ctx.measureText(caption).width;
-    const w = Math.max(tw, cw) + 20;
-    const h = 42;
-    const x = d.x - w / 2;
-    const y = d.y + r + 3;
+    const w = Math.round(Math.max(tw, cw) + 20);
+    const h = 40;
+    const x = Math.round(d.x - w / 2);
+    const y = Math.round(d.y + r + 6);
 
-    ctx.save();
-    ctx.shadowColor = p.dark ? "rgba(0,0,0,0.5)" : "rgba(20,30,50,0.18)";
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 4;
-    ctx.fillStyle = toCss(p.canvas);
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 8);
-    ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = rgba(p.muted, 0.35);
-    ctx.lineWidth = 1;
+    // A flat card: the surface and a hairline, as the panels.
+    ctx.fillStyle = toCss(p.surface);
     ctx.beginPath();
     ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 8);
+    ctx.fill();
+    ctx.strokeStyle = rgba(p.muted, p.dark ? 0.22 : 0.3);
+    ctx.lineWidth = 1;
     ctx.stroke();
 
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     ctx.font = titleFont;
     ctx.fillStyle = toCss(p.label);
-    ctx.fillText(title, d.x, y + 18);
+    ctx.fillText(title, x + w / 2, y + 17);
     ctx.font = captionFont;
     ctx.fillStyle = toCss(p.muted);
-    ctx.fillText(caption, d.x, y + 33);
+    ctx.fillText(caption, x + w / 2, y + 31);
   };
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { testPalette } from "./palette.fixture";
 import type { EdgeView, NodeView } from "../viewState";
 import {
   FADE_SECONDS,
@@ -8,23 +9,9 @@ import {
   nodeAttributes,
   retarget,
 } from "./attributes";
-import { heatColor, toCss, type Palette } from "./scales";
+import { churnColor, toCss, type Palette } from "./scales";
 
-const palette: Palette = {
-  dark: true,
-  canvas: [10, 14, 23],
-  label: [220, 225, 235],
-  halo: [10, 14, 23],
-  muted: [139, 149, 170],
-  edge: [70, 80, 100],
-  cool: [76, 106, 158],
-  warm: [167, 123, 243],
-  hot: [255, 143, 77],
-  focus: [143, 180, 255],
-  added: [61, 220, 176],
-  modified: [255, 207, 92],
-  removed: [240, 110, 110],
-};
+const palette: Palette = testPalette;
 
 function node(extra: Partial<NodeView> = {}): NodeView {
   return {
@@ -82,12 +69,13 @@ describe("node attributes", () => {
     expect(a.level).toBe(LEVEL_INDEX.directories);
   });
 
-  it("colours it by its heat and lets only hot nodes glow", () => {
+  it("colours it with the Churn step of its heat", () => {
     expect(nodeAttributes(node(), palette).color).toBe(
-      toCss(heatColor(0.2, palette)),
+      toCss(churnColor(0.2, palette)),
     );
-    expect(nodeAttributes(node(), palette).glow).toBe(0);
-    expect(nodeAttributes(node({ heat: 1 }), palette).glow).toBe(1);
+    expect(nodeAttributes(node({ heat: 1 }), palette).color).toBe(
+      toCss(palette.churn[4]!),
+    );
   });
 
   it("leaves the level weight and the reveal of the children to the shader", () => {
@@ -130,9 +118,16 @@ describe("node attributes", () => {
     expect(nodeAttributes(node(), palette).ring).toBe(0);
   });
 
-  it("marks an added Module with a dashed ring and a modified one with a solid ring", () => {
+  it("outlines a search match in the match colour", () => {
+    expect(nodeAttributes(node({ match: true }), palette)).toMatchObject({
+      ring: 1,
+      ringColor: toCss(palette.match),
+    });
+  });
+
+  it("outlines an added Module in green and a modified one in amber", () => {
     const added = nodeAttributes(node({ change: "added" }), palette);
-    expect(added).toMatchObject({ ring: 2, ringColor: toCss(palette.added) });
+    expect(added).toMatchObject({ ring: 1, ringColor: toCss(palette.added) });
     const modified = nodeAttributes(node({ change: "modified" }), palette);
     expect(modified).toMatchObject({
       ring: 1,
@@ -150,12 +145,6 @@ describe("node attributes", () => {
       forceLabel: true,
       labelFirst: false,
     });
-    expect(dir.badgeColor).toBe(toCss(palette.modified));
-    const added = nodeAttributes(
-      node({ change: "added", changedFiles: 2 }),
-      palette,
-    );
-    expect(added.badgeColor).toBe(toCss(palette.added));
     expect(
       nodeAttributes(
         node({ level: "files", change: "modified", changedFiles: 1 }),
@@ -168,12 +157,16 @@ describe("node attributes", () => {
     });
   });
 
-  it("draws a ghost hollow, without glow, behind the living nodes of its level", () => {
+  it("draws a ghost hollow, with a dashed outline, behind the living nodes of its level", () => {
     const ghost = nodeAttributes(
       node({ ghost: true, change: "removed", heat: 1 }),
       palette,
     );
-    expect(ghost).toMatchObject({ hollow: 1, glow: 0, ring: 2 });
+    expect(ghost).toMatchObject({
+      hollow: 1,
+      ring: 2,
+      ringColor: toCss(palette.removed),
+    });
     expect(ghost.zIndex).toBeLessThan(nodeAttributes(node(), palette).zIndex);
   });
 
@@ -246,6 +239,13 @@ describe("edge attributes", () => {
     expect(a.color).toBe(toCss(palette.focus));
     expect(a.zIndex).toBeGreaterThan(edgeAttributes(edge(), palette, 1).zIndex);
     expect(a.fade).toBeGreaterThan(edgeAttributes(edge(), palette, 1).fade);
+  });
+
+  it("shows the direction only of the focus's Dependencies", () => {
+    expect(edgeAttributes(edge(), palette, 1).taper).toBe(0);
+    expect(edgeAttributes(edge({ highlighted: true }), palette, 1).taper).toBe(
+      1,
+    );
   });
 
   it("colours an added, a modified and a removed Dependency by their change, focus or not", () => {

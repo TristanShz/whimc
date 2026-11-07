@@ -1,5 +1,6 @@
 import Graph from "graphology";
 import { describe, expect, it } from "vitest";
+import { testPalette } from "./palette.fixture";
 import type { EdgeView, NodeView, ViewState } from "../viewState";
 import { FADE_SECONDS } from "./attributes";
 import {
@@ -12,21 +13,7 @@ import {
 } from "./graphSync";
 import type { Palette } from "./scales";
 
-const palette: Palette = {
-  dark: false,
-  canvas: [250, 250, 250],
-  label: [20, 20, 20],
-  halo: [250, 250, 250],
-  muted: [100, 100, 100],
-  edge: [180, 180, 180],
-  cool: [140, 160, 190],
-  warm: [140, 85, 224],
-  hot: [226, 89, 28],
-  focus: [43, 91, 215],
-  added: [14, 152, 115],
-  modified: [184, 134, 11],
-  removed: [200, 60, 60],
-};
+const palette: Palette = testPalette;
 
 const n = (id: string, extra: Partial<NodeView> = {}): NodeView => ({
   id,
@@ -78,6 +65,7 @@ function view(nodes: NodeView[], edges: EdgeView[] = []): ViewState {
     levelWeights: { packages: 1, directories: 0, files: 0 },
     nodes,
     edges,
+    churnMax: { packages: 0, directories: 0, files: 0 },
     focus: null,
     changes: null,
     requests: { maps: [], compare: null },

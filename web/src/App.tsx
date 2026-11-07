@@ -16,7 +16,7 @@ import { useLive } from "./data/useLive";
 import { MapCanvas, type MapHandle } from "./render/MapCanvas";
 import { boundsOf, diveArea, insetsFrom, type Insets } from "./render/camera";
 import { keyAction } from "./render/keys";
-import { usePalette, usePrefersReducedMotion } from "./render/theme";
+import { usePalette, usePrefersReducedMotion, useTheme } from "./render/theme";
 import { DetailsPanel } from "./ui/DetailsPanel";
 import { IndexingProgress } from "./ui/IndexingProgress";
 import { LevelIndicator } from "./ui/LevelIndicator";
@@ -54,6 +54,7 @@ const LEVEL_NAMES: Record<Level, string> = {
 };
 
 export function App() {
+  const [theme, setTheme] = useTheme();
   const palette = usePalette();
   const reducedMotion = usePrefersReducedMotion();
   const map = useRef<MapHandle>(null);
@@ -287,6 +288,8 @@ export function App() {
           changes={changesOn}
           onChanges={setChangesOn}
           searchRef={searchField}
+          theme={theme}
+          onTheme={setTheme}
         />
         {changesOn && (
           <ChangesBar
@@ -301,7 +304,11 @@ export function App() {
         )}
       </div>
       <LevelIndicator level={indicator.level} depth={indicator.depth} />
-      <Legend changes={changesOn} />
+      <Legend
+        changes={changesOn}
+        levelName={LEVEL_NAMES[view.level]}
+        churnMax={view.churnMax[view.level]}
+      />
       <ZoomControls
         onZoomIn={() => map.current?.zoomIn()}
         onZoomOut={() => map.current?.zoomOut()}

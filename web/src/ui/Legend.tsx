@@ -1,7 +1,8 @@
 // What size, colour and edge style mean, so the Map reads without docs.
 
-import { useState } from "react";
-import { LEGEND_KEY, legendAtStart } from "./legendState";
+import { useState, type CSSProperties } from "react";
+import { churnRanges } from "../render/scales";
+import { LEGEND_KEY, churnLegend, legendAtStart } from "./legendState";
 
 const wide = () =>
   typeof window === "undefined" ||
@@ -39,51 +40,60 @@ function useLegendOpen(): [boolean, (open: boolean) => void] {
   ];
 }
 
-/** A Dependency as the Map draws it: a gentle arc, in its kind's pattern. */
-function Line({ dash, className }: { dash?: string; className?: string }) {
+/** A Dependency as the Map draws it: a thin line, in its kind's pattern. */
+function Line({
+  dash,
+  width = 1.25,
+  taper = false,
+  className,
+}: {
+  dash?: "dash" | "dot";
+  width?: number;
+  taper?: boolean;
+  className?: string;
+}) {
   return (
     <svg
-      width="34"
+      width="28"
       height="10"
-      viewBox="0 0 34 10"
+      viewBox="0 0 28 10"
       aria-hidden="true"
-      className={className}
+      className={`legend-line${className ? ` ${className}` : ""}`}
     >
-      <path
-        d="M1 7 Q17 1 33 7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={dash === "dot" ? 2.4 : 1.6}
-        strokeLinecap="round"
-        strokeDasharray={
-          dash === "dash" ? "5 3.5" : dash === "dot" ? "0.1 5" : undefined
-        }
-      />
+      {taper ? (
+        <path d="M1 3.6 L27 4.6 L27 5.4 L1 6.4 Z" fill="currentColor" />
+      ) : (
+        <path
+          d="M1 5 L27 5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={width}
+          strokeDasharray={
+            dash === "dash" ? "4 3" : dash === "dot" ? "1.25 3" : undefined
+          }
+        />
+      )}
     </svg>
   );
 }
 
-/** The taper of a Dependency: wide at the importer, narrow at the imported. */
-function Taper() {
-  return (
-    <svg width="34" height="10" viewBox="0 0 34 10" aria-hidden="true">
-      <circle cx="3" cy="7" r="2.5" fill="currentColor" opacity="0.55" />
-      <path
-        d="M6 5.4 Q18 1.2 30 6.4 L30 7 Q18 3.4 6 8.6 Z"
-        fill="currentColor"
-      />
-      <circle cx="31.5" cy="6.7" r="1.6" fill="currentColor" opacity="0.55" />
-    </svg>
-  );
+/** A disc as the Map draws it, with the ring of a mark when it has one. */
+function Disc({ className }: { className: string }) {
+  return <span className={`legend-disc ${className}`} aria-hidden="true" />;
 }
 
-/** A disc as the Changes switch marks it. */
-function Mark({ kind }: { kind: "added" | "modified" | "removed" }) {
-  return <span className={`legend-mark legend-${kind}`} aria-hidden="true" />;
+export interface LegendProps {
+  /** Whether the Changes switch is on: its marks are explained. */
+  changes?: boolean;
+  /** The level in view, whose Churn steps the Legend tells. */
+  levelName: string;
+  /** The Churn of the busiest Module of that level. */
+  churnMax: number;
 }
 
-export function Legend({ changes = false }: { changes?: boolean }) {
+export function Legend({ changes = false, levelName, churnMax }: LegendProps) {
   const [open, setOpen] = useLegendOpen();
+  const steps = churnLegend(churnRanges(churnMax));
   return (
     <details className="panel legend" open={open}>
       <summary
@@ -96,30 +106,48 @@ export function Legend({ changes = false }: { changes?: boolean }) {
       </summary>
       <dl>
         <div className="legend-row">
-          <dt>
+          <dt>Size</dt>
+          <dd className="legend-inline">
             <span className="legend-sizes" aria-hidden="true">
               <i style={{ width: 6, height: 6 }} />
               <i style={{ width: 10, height: 10 }} />
               <i style={{ width: 16, height: 16 }} />
             </span>
-          </dt>
-          <dd>Size, in lines of code</dd>
-        </div>
-        <div className="legend-row">
-          <dt>
-            <span className="legend-ramp" aria-hidden="true" />
-          </dt>
-          <dd>
-            Churn, commits in the last 90 days
-            <span className="legend-ends">
-              <span>calm</span>
-              <span>moving a lot</span>
-            </span>
+            lines of code
           </dd>
         </div>
-        <div className="legend-row legend-edges">
-          <dt className="visually-hidden">Dependencies</dt>
+        <div className="legend-row">
+          <dt>Churn</dt>
           <dd>
+            <span className="legend-note">
+              {levelName} by commits in the last 90 days
+            </span>
+            <ol className="legend-churn">
+              {steps.map((range, i) => (
+                <li key={i} className={range === "none" ? "is-empty" : ""}>
+                  <span
+                    className="legend-swatch"
+                    style={
+                      { "--swatch": `var(--churn-${i + 1})` } as CSSProperties
+                    }
+                    aria-hidden="true"
+                  />
+                  <span className="visually-hidden">
+                    {i === 0
+                      ? "Calmest step: "
+                      : i === steps.length - 1
+                        ? "Busiest step: "
+                        : `Step ${i + 1}: `}
+                  </span>
+                  {range}
+                </li>
+              ))}
+            </ol>
+          </dd>
+        </div>
+        <div className="legend-row">
+          <dt>Dependencies</dt>
+          <dd className="legend-list">
             <span>
               <Line /> runtime
             </span>
@@ -130,51 +158,57 @@ export function Legend({ changes = false }: { changes?: boolean }) {
               <Line dash="dot" /> dynamic
             </span>
             <span>
-              <Taper /> wide at the importer, narrow at the imported
+              <Line width={0.75} />
+              <Line width={2.25} /> more imports, thicker
             </span>
           </dd>
         </div>
-        <div className="legend-row legend-focus">
-          <dt className="visually-hidden">Focus</dt>
-          <dd>
+        <div className="legend-row">
+          <dt>Focus</dt>
+          <dd className="legend-list">
             <span>
-              <span className="legend-mark legend-focused" aria-hidden="true" />
-              <Line className="legend-focus-line" /> hovered or selected Module,
-              its Dependencies, search matches
+              <Disc className="legend-focused" /> hovered or selected, with its
+              Dependencies
+            </span>
+            <span>
+              <Line taper className="legend-focus-line" /> narrows towards the
+              imported Module
+            </span>
+            <span>
+              <Disc className="legend-match" /> search match
             </span>
           </dd>
         </div>
         {changes && (
-          <div className="legend-row legend-changes">
-            <dt className="visually-hidden">Changes</dt>
-            <dd>
+          <div className="legend-row">
+            <dt>Changes</dt>
+            <dd className="legend-list">
               <span>
-                <Mark kind="added" /> added
+                <Disc className="legend-added" /> added
               </span>
               <span>
-                <Mark kind="modified" /> modified
+                <Disc className="legend-modified" /> modified
               </span>
               <span>
-                <Mark kind="removed" /> removed
+                <Disc className="legend-removed" /> removed
               </span>
               <span>
                 <span className="legend-badge" aria-hidden="true">
                   3
-                </span>{" "}
+                </span>
                 changed Files inside
               </span>
-              <span className="legend-deps">Dependencies:</span>
               <span>
-                <Line className="legend-added-line" /> added
+                <Line className="legend-added-line" /> Dependency added
               </span>
               <span>
-                <Line className="legend-modified-line" /> modified (count or
-                kind)
+                <Line className="legend-modified-line" /> Dependency modified
+                (count or kind)
               </span>
               <span>
-                <Line className="legend-removed-line" /> removed
+                <Line className="legend-removed-line" /> Dependency removed
               </span>
-              <span className="legend-deps">What did not change fades.</span>
+              <span className="legend-note">What did not change fades.</span>
             </dd>
           </div>
         )}

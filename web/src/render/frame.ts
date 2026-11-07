@@ -13,7 +13,7 @@ export interface Frame {
   /** The level whose nodes the pointer can hover and click. */
   pickLevel: number;
   minRadiusPx: number;
-  /** 1, or 0 when the user asks for reduced motion: no pulse, no growing. */
+  /** 1, or 0 when the user asks for reduced motion: nodes do not scale in. */
   motion: number;
   palette: Palette;
   /** The labels drawn so far this frame. */

@@ -14,7 +14,7 @@ import Sigma from "sigma";
 import type { Rect } from "../api/types";
 import type { Camera, LevelBlend, ViewState } from "../viewState";
 import { LEVEL_INDEX } from "./attributes";
-import { cameraFrom, dotGrid, flipY, frameArea, type Insets } from "./camera";
+import { cameraFrom, flipY, frameArea, type Insets } from "./camera";
 import { clock, createFrame, type Frame } from "./frame";
 import { syncGraph, type MapGraph } from "./graphSync";
 import {
@@ -81,8 +81,6 @@ export interface MapCanvasProps {
 }
 
 const MAX_RATIO = 8;
-/** The glow's breath is redrawn at about 30 frames a second. */
-const PULSE_FRAME_MS = 33;
 /** The share of the clear screen the whole Map fills when fitted. */
 const FIT_MARGIN = 0.94;
 const MIN_RATIO = 1e-5;
@@ -152,7 +150,7 @@ export function MapCanvas(props: MapCanvasProps) {
       latest.current.onDive(e.node);
     });
 
-    // The level blend as uniforms and the dot grid, from the live camera.
+    // The level blend as uniforms, from the live camera.
     const uniforms = () => {
       const { width, height } = s.getDimensions();
       // Before the Map is framed, the scale is sigma's guess.
@@ -174,12 +172,6 @@ export function MapCanvas(props: MapCanvasProps) {
         blend.childReveal.files,
       ];
       f.pickLevel = LEVEL_INDEX[blend.level];
-      const g = dotGrid(cam.zoom, s.graphToViewport({ x: 0, y: 0 }));
-      el.style.setProperty("--grid-size", `${g.size}px`);
-      el.style.setProperty("--grid-x", `${g.x}px`);
-      el.style.setProperty("--grid-y", `${g.y}px`);
-      el.style.setProperty("--grid-major-x", `${g.majorX}px`);
-      el.style.setProperty("--grid-major-y", `${g.majorY}px`);
       return cam;
     };
     updateUniforms.current = uniforms;
@@ -271,7 +263,6 @@ export function MapCanvas(props: MapCanvasProps) {
       graph.current = synced.graph;
       sigma.setGraph(synced.graph);
     }
-    glowCache.delete(synced.graph);
     fadeUntil.current = Math.max(fadeUntil.current, synced.until);
     if (fadeLoop.current || fadeUntil.current < clock()) return;
     const tick = () => {
@@ -284,23 +275,10 @@ export function MapCanvas(props: MapCanvasProps) {
   }, [sigma, props.view, props.palette]);
   useEffect(() => () => cancelAnimationFrame(fadeLoop.current), []);
 
-  // The glow of the Modules that move a lot breathes: a slow redraw, at a
-  // low rate, while some glowing node is drawn and motion is welcome.
+  // Under reduced motion, arriving nodes fade in without scaling.
   useEffect(() => {
     frame.current.motion = props.reducedMotion ? 0 : 1;
     sigma?.scheduleRender();
-    if (!sigma || props.reducedMotion) return;
-    let last = 0;
-    let raf = 0;
-    const tick = (t: number) => {
-      raf = requestAnimationFrame(tick);
-      if (t - last < PULSE_FRAME_MS || !glowing(graph.current, frame.current))
-        return;
-      last = t;
-      sigma.scheduleRender();
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
   }, [sigma, props.reducedMotion]);
 
   useImperativeHandle(
@@ -309,12 +287,12 @@ export function MapCanvas(props: MapCanvasProps) {
       zoomIn: () =>
         sigma?.getCamera().animatedZoom({
           factor: 1.6,
-          duration: latest.current.reducedMotion ? 0 : 280,
+          duration: latest.current.reducedMotion ? 0 : 220,
         }),
       zoomOut: () =>
         sigma?.getCamera().animatedUnzoom({
           factor: 1.6,
-          duration: latest.current.reducedMotion ? 0 : 280,
+          duration: latest.current.reducedMotion ? 0 : 220,
         }),
       fit: () => {
         const b = latest.current.bounds;
@@ -334,26 +312,6 @@ export function MapCanvas(props: MapCanvasProps) {
 
   return <div ref={container} className="map-canvas" />;
 }
-
-/** Whether a glowing node of a level drawn is on screen, as far as cheap. */
-function glowing(graph: MapGraph, f: Frame): boolean {
-  const cached = glowCache.get(graph);
-  if (cached !== undefined && cached.weights === f.levelWeights.join())
-    return cached.on;
-  let on = false;
-  graph.forEachNode((_, a) => {
-    if (
-      !on &&
-      a.glow > 0 &&
-      a.fade > 0 &&
-      (f.levelWeights[a.level] ?? 0) > 0.05
-    )
-      on = true;
-  });
-  glowCache.set(graph, { weights: f.levelWeights.join(), on });
-  return on;
-}
-const glowCache = new WeakMap<MapGraph, { weights: string; on: boolean }>();
 
 /** Animates the camera onto an area of the Map. */
 function flyTo(

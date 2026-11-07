@@ -3,8 +3,6 @@ import {
   boundsOf,
   cameraFrom,
   diveArea,
-  dotGrid,
-  GRID_MAJOR,
   flipY,
   frameArea,
   insetsFrom,
@@ -59,34 +57,6 @@ describe("fitting", () => {
     );
     expect(f.zoom).toBe(2);
     expect(f.centre).toEqual({ x: 50, y: 50 });
-  });
-});
-
-describe("dot grid", () => {
-  it("keeps its spacing on screen within one octave while zooming", () => {
-    for (const zoom of [0.01, 0.3, 1, 1.9, 7, 300]) {
-      const g = dotGrid(zoom, { x: 0, y: 0 });
-      expect(g.size).toBeGreaterThanOrEqual(24);
-      expect(g.size).toBeLessThan(48);
-    }
-  });
-
-  it("moves with the Map while panning", () => {
-    const a = dotGrid(1, { x: 0, y: 0 });
-    const b = dotGrid(1, { x: 5, y: -3 });
-    expect(b.x - a.x).toBeCloseTo(5);
-    expect(((b.y - a.y + a.size) % a.size) - a.size).toBeCloseTo(-3);
-    expect(dotGrid(1, { x: 1000, y: 0 }).x).toBeLessThan(a.size);
-  });
-
-  it("puts a major dot every few dots, on a dot, moving with the Map", () => {
-    const g = dotGrid(1.3, { x: 1000, y: -77 });
-    const major = g.size * GRID_MAJOR;
-    expect(g.majorX).toBeLessThan(major);
-    expect(g.majorY).toBeGreaterThanOrEqual(0);
-    // A major dot sits on a minor one.
-    expect(((g.majorX - g.x) / g.size) % 1).toBeCloseTo(0);
-    expect(((g.majorY - g.y) / g.size) % 1).toBeCloseTo(0);
   });
 });
 

@@ -104,6 +104,11 @@ export function computeView(data: MapData, ui: UiState): ViewState {
 
   const nodes: NodeView[] = [];
   const edges: EdgeView[] = [];
+  const churnMax: Record<Level, number> = {
+    packages: 0,
+    directories: 0,
+    files: 0,
+  };
   for (const l of LEVELS) {
     const levelWeight = weights[l];
     if (levelWeight <= 0) continue;
@@ -186,6 +191,7 @@ export function computeView(data: MapData, ui: UiState): ViewState {
       (n) => n.churn,
       (n, v) => (n.heat = v),
     );
+    for (const n of levelNodes) churnMax[l] = Math.max(churnMax[l], n.churn);
     levelNodes.sort((a, b) => cmp(a.id, b.id));
     ghosts.sort((a, b) => cmp(a.id, b.id));
     nodes.push(...levelNodes, ...ghosts);
@@ -259,6 +265,7 @@ export function computeView(data: MapData, ui: UiState): ViewState {
     levelWeights: weights,
     nodes,
     edges,
+    churnMax,
     focus,
     changes: comparison
       ? {

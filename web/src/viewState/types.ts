@@ -135,6 +135,11 @@ export interface ViewState {
   nodes: NodeView[];
   /** The edges to draw, by level then ID. */
   edges: EdgeView[];
+  /**
+   * The Churn of the busiest Module drawn at each level (0 for a level not
+   * drawn): heat is normalised against it, the Legend tells its steps.
+   */
+  churnMax: Record<Level, number>;
   /** The Module the highlight is centred on, if it is on the Map. */
   focus: string | null;
   /** The Comparison drawn, for the one-line summary; null when not drawn. */

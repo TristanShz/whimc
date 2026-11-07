@@ -811,6 +811,12 @@ describe("measures", () => {
     expect(node(view, "file:web/app/main.ts").heat).toBe(1);
   });
 
+  it("tells the Churn each heat is normalised against, per level", () => {
+    const view = computeView(loaded, at(CLOSE));
+    expect(view.churnMax.packages).toBe(8);
+    expect(view.churnMax.directories).toBe(4);
+  });
+
   it("normalises Dependency weights into a strength per level", () => {
     const view = computeView(loaded, at(CLOSE));
     const strength = (id: string) =>

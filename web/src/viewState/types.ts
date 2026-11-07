@@ -64,7 +64,17 @@ export interface NodeView {
   test: boolean;
   /** How much of the node's level is in view: its share of the level blend. */
   levelWeight: number;
-  /** Final opacity: level weight × every fade that applies. */
+  /** Every fade that applies to it: the focus, the search, Changes, ghost. */
+  fade: number;
+  /**
+   * The fade it takes once its children are revealed: that of a Module
+   * nothing singles out, so that a highlighted parent fades out as well.
+   */
+  contextFade: number;
+  /**
+   * Final opacity: level weight × its fade, blended towards its context
+   * fade as the level below it is revealed.
+   */
   opacity: number;
   /** The hovered Module, else the selected one. */
   focused: boolean;

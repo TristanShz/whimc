@@ -18,6 +18,7 @@ const { UNSIGNED_BYTE, FLOAT, TRIANGLES } = WebGLRenderingContext;
 // Shared GLSL: the weight of a level and an item's opacity at u_time.
 const COMMON = /* glsl */ `
 uniform vec3 u_levelWeights;
+uniform vec3 u_childReveal;
 uniform float u_time;
 const float FADE = ${FADE_SECONDS.toFixed(4)};
 
@@ -25,6 +26,12 @@ float levelWeight(float level) {
   if (level < 0.5) return u_levelWeights.x;
   if (level < 1.5) return u_levelWeights.y;
   return u_levelWeights.z;
+}
+
+float childReveal(float level) {
+  if (level < 0.5) return u_childReveal.x;
+  if (level < 1.5) return u_childReveal.y;
+  return u_childReveal.z;
 }
 
 float fadeAt(vec3 f) {
@@ -41,6 +48,7 @@ attribute vec2 a_position;
 attribute float a_size;
 attribute vec3 a_fade;     // target, from, start time
 attribute vec4 a_style;    // level, glow, ring (0 none, 1 solid, 2 dashed), hollow
+attribute float a_context; // share of the fade kept once the children show
 attribute float a_angle;
 
 uniform mat3 u_matrix;
@@ -55,6 +63,7 @@ varying vec4 v_ringColor;
 varying vec2 v_offset;   // from the centre, in screen pixels
 varying float v_radius;  // in screen pixels
 varying float v_alpha;
+varying float v_ringAlpha;
 varying float v_context; // 1 when the node's level is only context
 varying vec4 v_style;    // level, glow extent (px), ring, hollow
 
@@ -62,19 +71,24 @@ const float bias = 255.0 / 254.0;
 
 void main() {
   float weight = levelWeight(a_style.x);
-  float alpha = fadeAt(a_fade) * weight;
+  float reveal = childReveal(a_style.x);
+  float fade = fadeAt(a_fade);
+  // A parent fades back as its children are revealed, highlight or not ...
+  float alpha = fade * mix(1.0, a_context, reveal) * weight;
+  // ... and keeps its ring (focus, match, change) as the highlight.
+  float ringAlpha = fade * max(weight, 0.8 * reveal);
 
   float radius = max(a_size / u_sizeRatio, u_minRadius);
   float glowPx = a_style.y * clamp(radius * 0.9, 7.0, 48.0);
   float ringPx = a_style.z > 0.5 ? 6.0 : 0.0;
   float extent = radius + max(glowPx, ringPx) + 1.5;
-  bool drawn = alpha > 0.004;
+  bool drawn = max(alpha, a_style.z > 0.5 ? ringAlpha : 0.0) > 0.004;
 
   #ifdef PICKING_MODE
   // Only the level in view is hovered and clicked, ghosts aside, and small
   // discs have a hit area larger than they look.
   extent = max(radius, 6.0);
-  drawn = drawn && abs(a_style.x - u_pickLevel) < 0.5 && a_style.w < 0.5;
+  drawn = alpha > 0.004 && abs(a_style.x - u_pickLevel) < 0.5 && a_style.w < 0.5;
   #endif
 
   // The triangle around the disc: its inradius is half its circumradius.
@@ -87,6 +101,7 @@ void main() {
   v_offset = offset;
   v_radius = radius;
   v_alpha = alpha;
+  v_ringAlpha = ringAlpha;
   v_context = 1.0 - weight;
   v_style = vec4(a_style.x, glowPx, a_style.z, a_style.w);
 
@@ -108,6 +123,7 @@ varying vec4 v_ringColor;
 varying vec2 v_offset;
 varying float v_radius;
 varying float v_alpha;
+varying float v_ringAlpha;
 varying float v_context;
 varying vec4 v_style;
 
@@ -154,7 +170,7 @@ void main() {
       float m = mod(arc, 7.0);
       ringA *= smoothstep(0.0, 0.8, m) * (1.0 - smoothstep(3.8, 4.6, m));
     }
-    ringA *= max(v_alpha, 0.0);
+    ringA *= max(v_ringAlpha, 0.0);
   }
 
   // Premultiplied, back to front: glow, body, ring.
@@ -173,6 +189,7 @@ const NODE_UNIFORMS = [
   "u_minRadius",
   "u_pickLevel",
   "u_levelWeights",
+  "u_childReveal",
   "u_time",
   "u_dark",
 ] as const;
@@ -202,6 +219,7 @@ export function createNodeProgram(frame: Frame) {
           },
           { name: "a_fade", size: 3, type: FLOAT },
           { name: "a_style", size: 4, type: FLOAT },
+          { name: "a_context", size: 1, type: FLOAT },
         ],
         CONSTANT_ATTRIBUTES: [{ name: "a_angle", size: 1, type: FLOAT }],
         CONSTANT_DATA: [[0], [(2 * Math.PI) / 3], [(4 * Math.PI) / 3]],
@@ -225,6 +243,7 @@ export function createNodeProgram(frame: Frame) {
       a[i++] = d.glow;
       a[i++] = d.ring;
       a[i++] = d.hollow;
+      a[i++] = d.context;
     }
 
     setUniforms(
@@ -243,9 +262,20 @@ export function createNodeProgram(frame: Frame) {
       gl.uniform1f(u.u_minRadius!, frame.minRadiusPx);
       gl.uniform1f(u.u_pickLevel!, frame.pickLevel);
       gl.uniform3fv(u.u_levelWeights!, frame.levelWeights);
+      gl.uniform3fv(u.u_childReveal!, frame.childReveal);
       gl.uniform1f(u.u_time!, clock());
       gl.uniform1f(u.u_dark!, frame.palette.dark ? 1 : 0);
     }
+  };
+}
+
+/**
+ * The program sigma draws the hovered node with, over every other: it draws
+ * nothing, so that a hovered parent never covers its children.
+ */
+export function createHoverNodeProgram(frame: Frame) {
+  return class NodeHoverProgram extends createNodeProgram(frame) {
+    render() {}
   };
 }
 

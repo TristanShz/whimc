@@ -35,6 +35,8 @@ const n = (id: string, extra: Partial<NodeView> = {}): NodeView => ({
   heat: 0,
   test: false,
   levelWeight: 1,
+  fade: 1,
+  contextFade: 1,
   opacity: 1,
   focused: false,
   selected: false,
@@ -115,7 +117,9 @@ describe("syncing the view state into the graph", () => {
     syncGraph(g, view([n("a")]), palette, 0);
     syncGraph(
       g,
-      view([n("a", { opacity: 0.15, dimmed: true })]),
+      view([
+        n("a", { fade: 0.15, contextFade: 0.15, opacity: 0.15, dimmed: true }),
+      ]),
       palette,
       FADE_SECONDS * 4,
     );

@@ -8,6 +8,8 @@ import { MIN_RADIUS_PX, type Palette } from "./scales";
 export interface Frame {
   /** The view state's level weights: Packages, Directories, Files. */
   levelWeights: [number, number, number];
+  /** How far the level below each level is revealed (LevelBlend.childReveal). */
+  childReveal: [number, number, number];
   /** The level whose nodes the pointer can hover and click. */
   pickLevel: number;
   minRadiusPx: number;
@@ -24,6 +26,7 @@ export const clock = () => (performance.now() - t0) / 1000;
 export function createFrame(palette: Palette): Frame {
   return {
     levelWeights: [1, 0, 0],
+    childReveal: [0, 0, 0],
     pickLevel: 0,
     minRadiusPx: MIN_RADIUS_PX,
     palette,

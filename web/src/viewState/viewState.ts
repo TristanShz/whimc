@@ -32,7 +32,10 @@ interface Place {
  */
 export function computeView(data: MapData, ui: UiState): ViewState {
   const radii = typicalRadii(data.levels);
-  const { level, depth, weights } = levelBlend(radii, ui.camera.zoom);
+  const { level, depth, weights, childReveal } = levelBlend(
+    radii,
+    ui.camera.zoom,
+  );
   const shown = (m: { test?: boolean }) => ui.tests || !m.test;
   const comparison = ui.changes ? data.comparison : null;
   const changes = comparisonIndex(comparison);
@@ -92,6 +95,13 @@ export function computeView(data: MapData, ui: UiState): ViewState {
   const keptBySearch = (id: string) =>
     !query || within(id, matches) || matchAncestors.has(id);
 
+  // The fade of a Module nothing singles out: dimmed by the focus, the
+  // search and the Changes switch, whichever are on.
+  const plainFade =
+    (focus !== null ? VIEW.focusDim : 1) *
+    (query ? VIEW.searchFade : 1) *
+    (changes ? VIEW.changesFade : 1);
+
   const nodes: NodeView[] = [];
   const edges: EdgeView[] = [];
   for (const l of LEVELS) {
@@ -120,12 +130,17 @@ export function computeView(data: MapData, ui: UiState): ViewState {
         focus !== null && !within(m.id, related) && !relatedAncestors.has(m.id);
       const searchDimmed = !keptBySearch(m.id);
       const changesDimmed = change === "unchanged";
-      const opacity =
-        levelWeight *
+      const fade =
         (ghost ? VIEW.ghostOpacity : 1) *
         (focusDimmed ? VIEW.focusDim : 1) *
         (searchDimmed ? VIEW.searchFade : 1) *
         (changesDimmed ? VIEW.changesFade : 1);
+      // Once its children show, a parent takes the fade of the Modules no
+      // one singled out: its highlight is left to its ring and its badge,
+      // so that it never hides the children it holds.
+      const contextFade = Math.min(fade, plainFade);
+      const t = childReveal[l];
+      const opacity = levelWeight * (fade + (contextFade - fade) * t);
       return {
         id: m.id,
         level: l,
@@ -140,6 +155,8 @@ export function computeView(data: MapData, ui: UiState): ViewState {
         heat: 0,
         test: m.test ?? false,
         levelWeight,
+        fade,
+        contextFade,
         opacity,
         focused: m.id === focus,
         selected: m.id === ui.selected,

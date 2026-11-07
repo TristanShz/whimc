@@ -18,7 +18,11 @@ import { cameraFrom, dotGrid, fitRatio, flipY } from "./camera";
 import { clock, createFrame, type Frame } from "./frame";
 import { syncGraph, type MapGraph } from "./graphSync";
 import { FONTS, createHoverDrawer, createLabelDrawer } from "./labels";
-import { createEdgeProgram, createNodeProgram } from "./programs";
+import {
+  createEdgeProgram,
+  createHoverNodeProgram,
+  createNodeProgram,
+} from "./programs";
 import type { Palette } from "./scales";
 
 export interface MapHandle {
@@ -72,6 +76,9 @@ export function MapCanvas(props: MapCanvasProps) {
     try {
       s = new Sigma(graph.current, el, {
         nodeProgramClasses: { disc: createNodeProgram(f) },
+        // The hovered node is not drawn again over the others: a parent would
+        // cover its children. Its ring and its plate are the hover.
+        nodeHoverProgramClasses: { disc: createHoverNodeProgram(f) },
         edgeProgramClasses: { dependency: createEdgeProgram(f) },
         defaultNodeType: "disc",
         defaultEdgeType: "dependency",
@@ -123,6 +130,11 @@ export function MapCanvas(props: MapCanvasProps) {
         blend.weights.packages,
         blend.weights.directories,
         blend.weights.files,
+      ];
+      f.childReveal = [
+        blend.childReveal.packages,
+        blend.childReveal.directories,
+        blend.childReveal.files,
       ];
       f.pickLevel = LEVEL_INDEX[blend.level];
       const g = dotGrid(cam.zoom, s.graphToViewport({ x: 0, y: 0 }));

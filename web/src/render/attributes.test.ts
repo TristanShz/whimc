@@ -41,6 +41,8 @@ function node(extra: Partial<NodeView> = {}): NodeView {
     heat: 0.2,
     test: false,
     levelWeight: 0.5,
+    fade: 1,
+    contextFade: 1,
     opacity: 0.5,
     focused: false,
     selected: false,
@@ -88,11 +90,9 @@ describe("node attributes", () => {
     expect(nodeAttributes(node({ heat: 1 }), palette).glow).toBe(1);
   });
 
-  it("leaves the level weight to the shader: the fade is the opacity without it", () => {
+  it("leaves the level weight and the reveal of the children to the shader", () => {
     expect(nodeAttributes(node(), palette).fade).toBe(1);
-    expect(nodeAttributes(node({ opacity: 0.05 }), palette).fade).toBeCloseTo(
-      0.1,
-    );
+    expect(nodeAttributes(node({ fade: 0.1 }), palette).fade).toBeCloseTo(0.1);
     expect(
       nodeAttributes(node({ levelWeight: 0, opacity: 0 }), palette).fade,
     ).toBe(0);
@@ -100,14 +100,26 @@ describe("node attributes", () => {
 
   it("does not see a change in a zoom step that only moves the level weight", () => {
     const a = nodeAttributes(
-      node({ levelWeight: 0.3, opacity: 0.3 * 0.15 }),
+      node({ levelWeight: 0.3, fade: 0.15, opacity: 0.3 * 0.15 }),
       palette,
     );
     const b = nodeAttributes(
-      node({ levelWeight: 0.7, opacity: 0.7 * 0.15 }),
+      node({ levelWeight: 0.7, fade: 0.15, opacity: 0.7 * 0.15 }),
       palette,
     );
     expect(a.fade).toBe(b.fade);
+  });
+
+  it("gives the share of its fade a highlighted parent keeps as context", () => {
+    expect(nodeAttributes(node(), palette).context).toBe(1);
+    const a = nodeAttributes(
+      node({ selected: true, fade: 1, contextFade: 0.15 }),
+      palette,
+    );
+    expect(a.context).toBeCloseTo(0.15);
+    expect(
+      nodeAttributes(node({ fade: 0, contextFade: 0 }), palette).context,
+    ).toBe(1);
   });
 
   it("rings the focus in the focus colour and forces its label", () => {

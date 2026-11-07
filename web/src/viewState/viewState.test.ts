@@ -250,6 +250,67 @@ describe("zoom thresholds and level blending", () => {
   });
 });
 
+describe("a highlighted parent once its children are revealed", () => {
+  // At DIRECTORIES the Directories are fully in and the Packages are context.
+  const children = (view: ViewState, parent: string) =>
+    view.nodes.filter((n) => n.parent === parent);
+
+  it("fades a selected Package out like any other, leaving its children on top", () => {
+    const far = computeView(loaded, at(FAR, { selected: "pkg:core" }));
+    const near = computeView(loaded, at(DIRECTORIES, { selected: "pkg:core" }));
+
+    expect(node(far, "pkg:core").opacity).toBe(1);
+    const core = node(near, "pkg:core");
+    expect(core).toMatchObject({ selected: true, focused: true });
+    expect(core.opacity).toBeCloseTo(VIEW.contextWeight * VIEW.focusDim);
+    expect(core.opacity).toBeCloseTo(node(near, "pkg:docs").opacity);
+    for (const child of children(near, "pkg:core"))
+      expect(child.opacity).toBeGreaterThan(core.opacity);
+  });
+
+  it("fades a hovered Package out the same way", () => {
+    const view = computeView(loaded, at(DIRECTORIES, { hovered: "pkg:core" }));
+
+    expect(node(view, "pkg:core").opacity).toBeCloseTo(
+      VIEW.contextWeight * VIEW.focusDim,
+    );
+  });
+
+  it("fades a Package matching the search out like those that do not", () => {
+    const far = computeView(loaded, at(FAR, { search: "core" }));
+    const near = computeView(loaded, at(DIRECTORIES, { search: "core" }));
+
+    expect(node(far, "pkg:core").opacity).toBe(1);
+    const core = node(near, "pkg:core");
+    expect(core.match).toBe(true);
+    expect(core.opacity).toBeCloseTo(VIEW.contextWeight * VIEW.searchFade);
+    for (const child of children(near, "pkg:core"))
+      expect(child.opacity).toBeGreaterThan(core.opacity);
+  });
+
+  it("hands the highlight over gradually while the children are revealed", () => {
+    const zoom = zoomFor(
+      (VIEW.revealStartPx + VIEW.revealEndPx) / 2,
+      DIR_RADIUS,
+    );
+    const view = computeView(loaded, at(zoom, { selected: "pkg:core" }));
+    const core = node(view, "pkg:core");
+    const docs = node(view, "pkg:docs");
+
+    expect(core.opacity).toBeLessThan(view.levelWeights.packages);
+    expect(core.opacity).toBeGreaterThan(docs.opacity);
+  });
+
+  it("keeps the highlight on the level in view", () => {
+    const view = computeView(
+      loaded,
+      at(DIRECTORIES, { selected: "dir:core/money" }),
+    );
+
+    expect(node(view, "dir:core/money").opacity).toBe(1);
+  });
+});
+
 describe("what the view asks the server", () => {
   it("asks only the levels in view", () => {
     expect(
@@ -609,6 +670,17 @@ describe("Changes switch", () => {
       summary: comparison.summary,
       current: true,
     });
+  });
+
+  it("fades a changed Package out like the unchanged ones once its Directories show", () => {
+    const view = computeView(withChanges, at(DIRECTORIES, { changes: on }));
+    const core = node(view, "pkg:core");
+
+    expect(core).toMatchObject({ change: "modified", changedFiles: 2 });
+    expect(core.opacity).toBeCloseTo(VIEW.contextWeight * VIEW.changesFade);
+    expect(core.opacity).toBeCloseTo(node(view, "pkg:docs").opacity);
+    expect(node(view, "dir:core/money").opacity).toBe(1);
+    expect(node(view, "dir:core/tax").opacity).toBeGreaterThan(core.opacity);
   });
 
   it("keeps the last Comparison on screen while the one for other refs is on its way, and says so", () => {

@@ -42,6 +42,11 @@ export interface NodeAttributes extends Fade {
   ringColor: string;
   /** 1 for a ghost: drawn as an outline. */
   hollow: number;
+  /**
+   * The share of its fade it keeps once the level below it is revealed (the
+   * shader blends towards it): its context fade over its fade.
+   */
+  context: number;
   /** Sigma draws its label whatever the crowd: see labelFirst. */
   forceLabel: boolean;
   /**
@@ -127,11 +132,12 @@ export function nodeAttributes(
     label: shorten(n.name),
     caption: measures(n.size, n.churn),
     level,
-    fade: n.levelWeight > 0 ? round(n.opacity / n.levelWeight) : 0,
+    fade: n.levelWeight > 0 ? round(n.fade) : 0,
     glow: n.ghost ? 0 : glow(n.heat),
     ring,
     ringColor: toCss(ringColor),
     hollow: n.ghost ? 1 : 0,
+    context: n.fade > 0 ? round(Math.min(1, n.contextFade / n.fade)) : 1,
     forceLabel: labelFirst || badge !== "",
     labelFirst,
     badge,

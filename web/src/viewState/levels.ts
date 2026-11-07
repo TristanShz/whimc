@@ -84,6 +84,11 @@ export interface LevelBlend {
   level: Level;
   depth: number;
   weights: Record<Level, number>;
+  /**
+   * How far the level below each level is revealed, 0 to 1 (0 for Files):
+   * a parent fades back to context, highlight or not, as it rises.
+   */
+  childReveal: Record<Level, number>;
 }
 
 /**
@@ -107,7 +112,29 @@ export function levelBlend(
   const depth = dirs + files;
   const level =
     files >= 0.5 ? "files" : dirs >= 0.5 ? "directories" : "packages";
-  return { level, depth, weights };
+  return {
+    level,
+    depth,
+    weights,
+    childReveal: { packages: dirs, directories: files, files: 0 },
+  };
+}
+
+/**
+ * The zoom (screen pixels per map unit) at which a level is fully in view:
+ * its typical disc, and that of every level above it down to it, reaches
+ * the end of the reveal on screen. 0 for the Packages, always in view; null
+ * while a radius it needs is unknown.
+ */
+export function revealZoom(
+  radii: Record<Level, number | null>,
+  level: Level,
+): number | null {
+  if (level === "packages") return 0;
+  const needed =
+    level === "files" ? [radii.directories, radii.files] : [radii.directories];
+  if (needed.some((r) => r === null || r <= 0)) return null;
+  return VIEW.revealEndPx / Math.min(...(needed as number[]));
 }
 
 /**

@@ -1,8 +1,9 @@
 // Package gitrepo reads a git repository through the git CLI: it lists the
 // Files of a commit or of the working tree and reads their content. Blob
 // contents go through one long-running `git cat-file --batch` process, and
-// working-tree Files are hashed with `git hash-object` semantics so they share
-// the key space of committed blobs.
+// working-tree Files are hashed by one long-running `git hash-object
+// --stdin-paths`, git's filters applied, so they share the key space of
+// committed blobs.
 package gitrepo
 
 import (
@@ -47,6 +48,9 @@ type Repo struct {
 
 	mu      sync.Mutex
 	catfile *catFile
+
+	hashMu sync.Mutex
+	hasher *hashObject
 }
 
 // Open finds the work tree containing path.
@@ -207,13 +211,45 @@ func (r *Repo) StatWorkTree(path string) (WorkTreeFile, error) {
 	return WorkTreeFile{Path: path, Size: info.Size(), ModTime: info.ModTime().UnixNano()}, nil
 }
 
-// ReadWorkTree reads a working-tree File and returns its content and blob hash.
+// ReadWorkTree reads a working-tree File and returns its content and the hash
+// of the blob git would store for it: the content as git's filters clean it
+// (line endings converted per core.autocrlf and the eol attributes, for
+// instance), so that a File checked out unchanged has its committed blob.
 func (r *Repo) ReadWorkTree(path string) (content []byte, blob string, err error) {
 	content, err = os.ReadFile(filepath.Join(r.root, filepath.FromSlash(path)))
 	if err != nil {
 		return nil, "", err
 	}
+	if blob, ok := r.hashWorkTree(path); ok {
+		return content, blob, nil
+	}
 	return content, HashBlob(content), nil
+}
+
+// hashWorkTree asks the long-running `git hash-object --stdin-paths` for the
+// blob of a working-tree File, and reports false when it cannot tell: a path
+// holding a line break, or starting with a quote (which git would unquote),
+// or a failure of git, whose process is then restarted on the next File.
+func (r *Repo) hashWorkTree(path string) (string, bool) {
+	if strings.ContainsAny(path, "\n\r") || strings.HasPrefix(path, `"`) {
+		return "", false
+	}
+	r.hashMu.Lock()
+	defer r.hashMu.Unlock()
+	if r.hasher == nil {
+		h, err := startHashObject(r.git, r.root)
+		if err != nil {
+			return "", false
+		}
+		r.hasher = h
+	}
+	blob, err := r.hasher.hash(path)
+	if err != nil {
+		r.hasher.close()
+		r.hasher = nil
+		return "", false
+	}
+	return blob, true
 }
 
 // ReadBlob returns the content of a blob.
@@ -238,6 +274,12 @@ func (r *Repo) ReadBlob(blob string) ([]byte, error) {
 
 // Close stops the long-running git processes.
 func (r *Repo) Close() error {
+	r.hashMu.Lock()
+	if r.hasher != nil {
+		r.hasher.close()
+		r.hasher = nil
+	}
+	r.hashMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.catfile == nil {
@@ -248,7 +290,8 @@ func (r *Repo) Close() error {
 	return err
 }
 
-// HashBlob returns the git blob hash of content, as `git hash-object` does.
+// HashBlob returns the git blob hash of content, as `git hash-object
+// --no-filters` does.
 func HashBlob(content []byte) string {
 	h := sha1.New()
 	fmt.Fprintf(h, "blob %d\x00", len(content))
@@ -499,4 +542,50 @@ func (r *Repo) HeadBranch(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// hashObject is a running `git hash-object --stdin-paths` process.
+type hashObject struct {
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	out *bufio.Reader
+}
+
+func startHashObject(git, dir string) (*hashObject, error) {
+	cmd := exec.Command(git, "hash-object", "--stdin-paths")
+	cmd.Dir = dir
+	// One hash per path as soon as it is computed, not at exit.
+	cmd.Env = append(os.Environ(), "GIT_FLUSH=1")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start git hash-object: %w", err)
+	}
+	return &hashObject{cmd: cmd, in: in, out: bufio.NewReader(out)}, nil
+}
+
+func (h *hashObject) hash(path string) (string, error) {
+	if _, err := io.WriteString(h.in, path+"\n"); err != nil {
+		return "", fmt.Errorf("git hash-object: %w", err)
+	}
+	line, err := h.out.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("git hash-object: %w", err)
+	}
+	blob := strings.TrimSpace(line)
+	if _, err := hex.DecodeString(blob); err != nil || (len(blob) != 40 && len(blob) != 64) {
+		return "", fmt.Errorf("git hash-object: unexpected answer %q", line)
+	}
+	return blob, nil
+}
+
+func (h *hashObject) close() error {
+	h.in.Close()
+	return h.cmd.Wait()
 }

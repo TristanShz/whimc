@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/TristanShz/whimc/engine"
@@ -355,5 +357,29 @@ func TestParseStateReadsTheRefSyntaxOfTheCommandLineAndTheAPI(t *testing.T) {
 	}
 	if s := worktree.String(); s != "worktree" {
 		t.Errorf("working tree String() = %q, want worktree", s)
+	}
+}
+
+func TestFilesCheckedOutWithCRLFLineEndingsAreUnchanged(t *testing.T) {
+	r := testrepo.New(t)
+	r.WriteFiles(map[string]string{
+		".gitattributes": "* text eol=crlf\n",
+		"package.json":   `{"name": "shop"}`,
+		"src/cart.ts":    "import { price } from './price'\nexport const cart = price\n",
+		"src/price.ts":   "export const price = 1\n",
+	})
+	r.Commit("initial")
+	// Check the Files out again, with the line endings the attributes ask.
+	r.Remove("src")
+	r.Remove("package.json")
+	r.Git("checkout", "--", ".")
+	if content, err := os.ReadFile(r.Path("src/price.ts")); err != nil || !strings.Contains(string(content), "\r\n") {
+		t.Fatalf("src/price.ts was not checked out with CRLF: %q, %v", content, err)
+	}
+	ws := open(t, r)
+
+	c := compare(t, ws, engine.State{Ref: "HEAD"}, worktree)
+	if got := changesOf(t, c, engine.Files); len(got) != 0 {
+		t.Errorf("Files changed against HEAD = %q, want none", got)
 	}
 }

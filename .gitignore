@@ -1,0 +1,20 @@
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Web UI
+node_modules/
+web/dist/
+.vite/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local whimc data (the index normally lives in the user cache)
+.whimc/

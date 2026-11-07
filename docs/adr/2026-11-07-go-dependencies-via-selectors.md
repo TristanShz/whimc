@@ -1,0 +1,3 @@
+# Go file-level Dependencies are resolved from selectors, not go/types
+
+A Go import targets a whole package, but whimc's Dependencies are File to File. We resolve them by reading the `pkg.Symbol` selectors a File uses and matching each Symbol against the top-level declarations of the target package's Files — parsing only, no type checking. `go/types` would be exact (methods included) but must load and type-check the whole module, which is slow at 10M+ LOC and fails on code that does not compile yet, the usual state in the middle of an AI session. Method calls on values of imported types are therefore not attributed to their defining File.

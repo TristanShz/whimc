@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, compareUrl, createApi, mapUrl, moduleUrl } from "./client";
+import {
+  ApiError,
+  compareUrl,
+  createApi,
+  mapUrl,
+  moduleUrl,
+  overviewUrl,
+} from "./client";
 import type { MapView } from "./types";
 
 describe("URLs", () => {
@@ -25,6 +32,13 @@ describe("URLs", () => {
     );
     expect(moduleUrl({ id: "pkg:packages/web", ref: "HEAD" })).toBe(
       "/api/module?id=pkg%3Apackages%2Fweb&ref=HEAD",
+    );
+  });
+
+  it("asks the Overview of a State", () => {
+    expect(overviewUrl({})).toBe("/api/overview");
+    expect(overviewUrl({ ref: "main", tests: false })).toBe(
+      "/api/overview?ref=main&tests=false",
     );
   });
 });

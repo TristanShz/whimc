@@ -20,6 +20,7 @@ import { usePalette, usePrefersReducedMotion, useTheme } from "./render/theme";
 import { DetailsPanel } from "./ui/DetailsPanel";
 import { IndexingProgress } from "./ui/IndexingProgress";
 import { LevelIndicator } from "./ui/LevelIndicator";
+import { OverviewPanel } from "./ui/OverviewPanel";
 import { Legend } from "./ui/Legend";
 import { Toolbar } from "./ui/Toolbar";
 import { ChangesBar, DEFAULT_REFS } from "./ui/ChangesBar";
@@ -299,6 +300,14 @@ export function App() {
             changes={view.changes}
             loading={loading.has("compare")}
             error={errors.compare}
+            revision={live.revision}
+          />
+        )}
+        {packages && !empty && (
+          <OverviewPanel
+            api={api}
+            stateRef={changesOn ? refs.target : null}
+            tests={tests}
             revision={live.revision}
           />
         )}

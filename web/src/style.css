@@ -62,6 +62,9 @@
   --churn-3: light-dark(#a88469, #b79878);
   --churn-4: light-dark(#bd8049, #d8a262);
   --churn-5: light-dark(#d27908, #faab3f);
+  /* Languages of the Overview, two quiet hues apart from Churn. */
+  --lang-ts: light-dark(#5468b8, #8797dc);
+  --lang-go: light-dark(#2b8585, #5eb0ae);
 }
 
 :root[data-theme="dark"] {
@@ -372,6 +375,223 @@ code {
 .theme-button .icon {
   width: 15px;
   height: 15px;
+}
+
+/* Overview: the State in view in a few figures, under the toolbar. */
+
+.overview {
+  width: 296px;
+  font-size: var(--text-s);
+}
+
+.overview-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.overview-head:hover {
+  background: var(--surface-hover);
+}
+
+.overview-head:focus-visible {
+  outline-offset: -2px;
+}
+
+.overview-head::after {
+  content: "";
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--text-subtle);
+  border-bottom: 1.5px solid var(--text-subtle);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--fast) var(--ease);
+}
+
+.overview-head[aria-expanded="true"]::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.overview-head-size {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+#overview-body {
+  padding: 0 var(--space-3) var(--space-3);
+  transition: opacity var(--fast) var(--ease);
+}
+
+#overview-body.is-stale {
+  opacity: 0.5;
+}
+
+.overview-figures {
+  display: grid;
+  /* The middle column holds "Dependencies", the longest label. */
+  grid-template-columns: 1fr 1.25fr 1fr;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+}
+
+.overview-figures div {
+  min-width: 0;
+  padding: 6px var(--space-2) 7px;
+}
+
+.overview-figures div:nth-child(3n + 2),
+.overview-figures div:nth-child(3n + 3) {
+  border-left: 1px solid var(--border);
+}
+
+.overview-figures div:nth-child(n + 4) {
+  border-top: 1px solid var(--border);
+}
+
+.overview-figures dt {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-figures dd {
+  margin: 1px 0 0;
+  font: 600 var(--text-l) / 1.25 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  cursor: default;
+}
+
+.overview-figures .is-partial dd {
+  color: var(--text-subtle);
+  animation: breathe 1.4s var(--ease) infinite alternate;
+}
+
+.overview-languages {
+  display: grid;
+  gap: 6px;
+  margin-top: var(--space-3);
+}
+
+.overview-bar {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.overview-bar i {
+  flex-basis: 0;
+  min-width: 2px;
+  background: var(--swatch);
+}
+
+.lang-ts {
+  --swatch: var(--lang-ts);
+}
+
+.lang-go {
+  --swatch: var(--lang-go);
+}
+
+.overview-languages ul {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.overview-languages li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overview-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--swatch);
+}
+
+.overview-percent {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.overview-moving {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+
+.overview-moving strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.overview-moving-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-skeleton {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.overview-skeleton span {
+  height: 38px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-raised);
+  animation: breathe 1.4s var(--ease) infinite alternate;
+}
+
+.overview-error {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+}
+
+.overview-error button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.overview-error button:hover {
+  text-decoration: underline;
 }
 
 /* Level indicator: a segmented strip whose marker slides with the zoom. */
@@ -1118,6 +1338,10 @@ code {
   .legend {
     width: auto;
     max-width: calc(100vw - 80px);
+  }
+
+  .overview {
+    width: auto;
   }
 
   .indexing {

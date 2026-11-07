@@ -8,6 +8,18 @@ export function formatCount(n: number): string {
   return counts.format(n);
 }
 
+/**
+ * A count short enough for a glance: exact below a thousand, then one
+ * decimal in thousands or millions ("182.4k", "1.2M", "3k").
+ */
+export function formatCompact(n: number): string {
+  const short = (v: number, unit: string) =>
+    `${v.toFixed(1).replace(/\.0$/, "")}${unit}`;
+  if (Math.abs(n) < 1000) return formatCount(n);
+  if (Math.abs(n) < 999_950) return short(n / 1000, "k");
+  return short(n / 1_000_000, "M");
+}
+
 /** "1 line", "1,240 lines". */
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${formatCount(n)} ${n === 1 ? one : many}`;

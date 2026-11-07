@@ -3,27 +3,14 @@
 import { useState, type CSSProperties } from "react";
 import { churnRanges } from "../render/scales";
 import { LEGEND_KEY, churnLegend, legendAtStart } from "./legendState";
+import { readStored, writeStored } from "./storage";
 
 const wide = () =>
   typeof window === "undefined" ||
   window.matchMedia("(min-width: 720px)").matches;
 
-/** Browser storage may be off: the Legend then opens as on a first view. */
-function stored(): string | null {
-  try {
-    return window.localStorage.getItem(LEGEND_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function store(value: "open" | "closed") {
-  try {
-    window.localStorage.setItem(LEGEND_KEY, value);
-  } catch {
-    // Not remembered: the next view opens as this one did.
-  }
-}
+const stored = () => readStored(LEGEND_KEY);
+const store = (value: "open" | "closed") => writeStored(LEGEND_KEY, value);
 
 function useLegendOpen(): [boolean, (open: boolean) => void] {
   const [open, setOpen] = useState(() => {

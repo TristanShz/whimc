@@ -7,6 +7,7 @@ import type {
   Level,
   MapView,
   ModuleDetails,
+  Overview,
   Rect,
   Refs,
   Update,
@@ -34,6 +35,12 @@ export interface CompareRequest {
 /** A /api/module call: the click details of a Module. */
 export interface ModuleRequest {
   id: string;
+  ref?: string;
+  tests?: boolean;
+}
+
+/** A /api/overview call: a State summed up. */
+export interface OverviewRequest {
   ref?: string;
   tests?: boolean;
 }
@@ -86,10 +93,15 @@ export function moduleUrl(r: ModuleRequest): string {
   return url("/api/module", { id: r.id, ref: r.ref, tests: r.tests });
 }
 
+export function overviewUrl(r: OverviewRequest): string {
+  return url("/api/overview", { ref: r.ref, tests: r.tests });
+}
+
 export interface Api {
   map(r: MapRequest, signal?: AbortSignal): Promise<MapView>;
   compare(r: CompareRequest, signal?: AbortSignal): Promise<Comparison>;
   module(r: ModuleRequest, signal?: AbortSignal): Promise<ModuleDetails>;
+  overview(r: OverviewRequest, signal?: AbortSignal): Promise<Overview>;
   /** The branches, tags and recent commits to compare. */
   refs(signal?: AbortSignal): Promise<Refs>;
   /** Calls onUpdate for each Update until the returned function is called. */
@@ -119,6 +131,7 @@ export function createApi(opts: ApiOptions = {}): Api {
     map: (r, signal) => get(mapUrl(r), signal),
     compare: (r, signal) => get(compareUrl(r), signal),
     module: (r, signal) => get(moduleUrl(r), signal),
+    overview: (r, signal) => get(overviewUrl(r), signal),
     refs: (signal) => get("/api/refs", signal),
     changes(onUpdate) {
       const Source = opts.EventSource ?? EventSource;

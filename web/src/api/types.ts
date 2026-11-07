@@ -1,5 +1,5 @@
 // The JSON shapes of whimc's HTTP API, as encoded by the Go engine
-// (engine.MapView, engine.Comparison) and the server (server.ModuleDetails).
+// (engine.MapView, engine.Comparison, engine.Overview) and the server (server.ModuleDetails).
 
 /** A level of the Module hierarchy. */
 export type Level = "packages" | "directories" | "files";
@@ -133,6 +133,28 @@ export interface ModuleDetails {
   module: Module;
   /** Up to five children with a Churn, the highest first. */
   movingChildren: Module[];
+}
+
+/** A language of the Overview: TypeScript and JavaScript, or Go. */
+export type Language = "ts" | "go";
+
+/** A whole State summed up in a few figures (engine.Overview). */
+export interface Overview {
+  /** Non-blank lines of every File. */
+  size: number;
+  packages: number;
+  directories: number;
+  files: number;
+  /** File Dependencies. */
+  dependencies: number;
+  /** Distinct commits of the Churn window that touched any File. */
+  commits: number;
+  /** Size by language, the largest first. */
+  languages: { language: Language; size: number }[];
+  /** The Package with the highest Churn; absent when none moved. */
+  movingPackage?: { id: string; name: string; churn: number };
+  /** The first run is under way: Dependencies and commits are still counted. */
+  partial: boolean;
 }
 
 /** What an Update reports (engine.UpdateKind). */

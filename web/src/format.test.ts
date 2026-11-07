@@ -3,6 +3,7 @@ import type { Summary } from "./api/types";
 import {
   changeSummary,
   compareFailure,
+  formatCompact,
   formatCount,
   measures,
   plural,
@@ -12,6 +13,16 @@ import {
 describe("format", () => {
   it("groups thousands", () => {
     expect(formatCount(1240)).toBe("1,240");
+  });
+
+  it("shortens large counts for a glance", () => {
+    expect(formatCompact(0)).toBe("0");
+    expect(formatCompact(999)).toBe("999");
+    expect(formatCompact(1000)).toBe("1k");
+    expect(formatCompact(182_431)).toBe("182.4k");
+    expect(formatCompact(999_949)).toBe("999.9k");
+    expect(formatCompact(999_950)).toBe("1M");
+    expect(formatCompact(12_345_678)).toBe("12.3M");
   });
 
   it("agrees a count with its noun", () => {

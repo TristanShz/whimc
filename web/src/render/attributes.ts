@@ -146,7 +146,10 @@ export function nodeAttributes(
   };
 }
 
-/** How much of an edge shows at full opacity: Dependencies stay behind nodes. */
+/**
+ * How much of an edge shows at full opacity: Dependencies stay quieter than
+ * the discs they run over, the heavy ones less so.
+ */
 const EDGE_ALPHA = { normal: 0.42, highlighted: 0.95 };
 
 /** An edge's attributes; levelWeight is its level's share of the blend. */
@@ -158,18 +161,21 @@ export function edgeAttributes(
   density = 1,
 ): Omit<EdgeAttributes, "fadeFrom" | "fadeAt"> {
   const level = LEVEL_INDEX[e.level];
+  // A change wins over the focus: the Changes legend explains each colour.
   const color =
     e.change === "added"
       ? p.added
       : e.ghost || e.change === "removed"
         ? p.removed
-        : e.highlighted
-          ? p.focus
-          : p.edge;
+        : e.change === "modified"
+          ? p.modified
+          : e.highlighted
+            ? p.focus
+            : p.edge;
   // A highlighted crowd thins too, but stays above the rest.
   const base = e.highlighted
     ? EDGE_ALPHA.highlighted * Math.min(1, density * 1.8)
-    : EDGE_ALPHA.normal * density;
+    : EDGE_ALPHA.normal * density * (0.7 + 0.6 * e.strength);
   return {
     size: edgeWidth(e.level, e.strength, e.highlighted),
     color: toCss(color),
@@ -177,6 +183,7 @@ export function edgeAttributes(
     kind: e.kind === "runtime" ? 0 : e.kind === "type-only" ? 1 : 2,
     // The level weight is the shader's, as for nodes.
     fade: levelWeight > 0 ? round((e.opacity / levelWeight) * base) : 0,
-    zIndex: e.highlighted || e.change === "added" ? 1 : 0,
+    zIndex:
+      e.highlighted || e.change === "added" || e.change === "modified" ? 1 : 0,
   };
 }

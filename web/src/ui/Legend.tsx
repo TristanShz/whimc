@@ -4,9 +4,15 @@ const wide = () =>
   typeof window === "undefined" ||
   window.matchMedia("(min-width: 720px)").matches;
 
-function Line({ dash }: { dash?: string }) {
+function Line({ dash, className }: { dash?: string; className?: string }) {
   return (
-    <svg width="34" height="8" viewBox="0 0 34 8" aria-hidden="true">
+    <svg
+      width="34"
+      height="8"
+      viewBox="0 0 34 8"
+      aria-hidden="true"
+      className={className}
+    >
       <line
         x1="1"
         y1="4"
@@ -69,6 +75,16 @@ export function Legend({ changes = false }: { changes?: boolean }) {
             </span>
           </dd>
         </div>
+        <div className="legend-row legend-focus">
+          <dt className="visually-hidden">Focus</dt>
+          <dd>
+            <span>
+              <span className="legend-mark legend-focused" aria-hidden="true" />
+              <Line className="legend-focus-line" /> hovered or selected Module,
+              its Dependencies, search matches
+            </span>
+          </dd>
+        </div>
         {changes && (
           <div className="legend-row legend-changes">
             <dt className="visually-hidden">Changes</dt>
@@ -88,10 +104,18 @@ export function Legend({ changes = false }: { changes?: boolean }) {
                 </span>{" "}
                 changed Files inside
               </span>
-              <span className="legend-deps">
-                Dependencies: <b className="legend-added-text">added</b>,{" "}
-                <b className="legend-removed-text">removed</b>; the rest fades
+              <span className="legend-deps">Dependencies:</span>
+              <span>
+                <Line className="legend-added-line" /> added
               </span>
+              <span>
+                <Line className="legend-modified-line" /> modified (count or
+                kind)
+              </span>
+              <span>
+                <Line className="legend-removed-line" /> removed
+              </span>
+              <span className="legend-deps">What did not change fades.</span>
             </dd>
           </div>
         )}

@@ -216,6 +216,12 @@ describe("edge attributes", () => {
     expect(lit(0.1)).toBeGreaterThan(plain(0.1));
   });
 
+  it("shows a heavy Dependency more than a light one", () => {
+    expect(
+      edgeAttributes(edge({ strength: 1 }), palette, 1).fade,
+    ).toBeGreaterThan(edgeAttributes(edge({ strength: 0.1 }), palette, 1).fade);
+  });
+
   it("encodes the kind for the dash pattern and the width from the strength", () => {
     expect(edgeAttributes(edge(), palette, 1).kind).toBe(0);
     expect(edgeAttributes(edge({ kind: "type-only" }), palette, 1).kind).toBe(
@@ -242,10 +248,17 @@ describe("edge attributes", () => {
     expect(a.fade).toBeGreaterThan(edgeAttributes(edge(), palette, 1).fade);
   });
 
-  it("colours an added Dependency and a removed one by their change", () => {
+  it("colours an added, a modified and a removed Dependency by their change, focus or not", () => {
     expect(edgeAttributes(edge({ change: "added" }), palette, 1).color).toBe(
       toCss(palette.added),
     );
+    expect(
+      edgeAttributes(
+        edge({ change: "modified", highlighted: true }),
+        palette,
+        1,
+      ).color,
+    ).toBe(toCss(palette.modified));
     expect(
       edgeAttributes(edge({ change: "removed", ghost: true }), palette, 1)
         .color,

@@ -116,18 +116,22 @@ export const MIN_RADIUS_PX = 2.5;
 /** Edge widths on screen, in pixels. */
 export const EDGE_WIDTH = {
   min: 0.6,
-  max: { packages: 4.5, directories: 2.4, files: 1 } as Record<Level, number>,
+  max: { packages: 9, directories: 4.5, files: 1.6 } as Record<Level, number>,
   highlight: 0.8,
 };
 
-/** The width of a Dependency on screen, from its strength within the level. */
+/**
+ * The width of a Dependency on screen, from its strength within the level:
+ * quadratic, so that the few heavy couplings stand out from the many light
+ * ones.
+ */
 export function edgeWidth(
   level: Level,
   strength: number,
   highlighted: boolean,
 ): number {
   const s = Math.min(1, Math.max(0, strength));
-  const w = EDGE_WIDTH.min + (EDGE_WIDTH.max[level] - EDGE_WIDTH.min) * s;
+  const w = EDGE_WIDTH.min + (EDGE_WIDTH.max[level] - EDGE_WIDTH.min) * s * s;
   return highlighted ? w + EDGE_WIDTH.highlight : w;
 }
 

@@ -163,6 +163,22 @@ code {
   cursor: grabbing;
 }
 
+/*
+ * Sigma stacks its layers edges, nodes, labels…: Dependencies go above the
+ * discs (they run from boundary to boundary), under the labels.
+ */
+.map-canvas canvas {
+  z-index: 1;
+}
+
+.map-canvas .sigma-edges {
+  z-index: 2;
+}
+
+.map-canvas .sigma-edges ~ canvas:not(.sigma-nodes) {
+  z-index: 3;
+}
+
 /* Floating glass plates. */
 
 .panel {
@@ -525,11 +541,33 @@ code {
   display: block;
 }
 
-.legend-added-text {
+.legend-focus {
+  grid-template-columns: 1fr;
+}
+
+.legend-focus span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-focused {
+  border-color: var(--focus);
+}
+
+.legend-focus-line {
+  color: var(--focus);
+}
+
+.legend-added-line {
   color: var(--added);
 }
 
-.legend-removed-text {
+.legend-modified-line {
+  color: var(--modified);
+}
+
+.legend-removed-line {
   color: var(--removed);
 }
 

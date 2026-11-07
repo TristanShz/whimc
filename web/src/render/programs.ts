@@ -1,6 +1,7 @@
 // The WebGL programs that draw the Map in sigma: a disc with a lens shading,
 // a rim, a Churn glow and a focus or Changes ring for Modules, and a line
-// with a solid, dashed or dotted pattern for Dependencies. Both fade between
+// with a solid, dashed or dotted pattern for Dependencies, drawn above the
+// discs from one disc's boundary to the other's. Both fade between
 // opacities on the GPU and take the level blend as a uniform, so that zooming
 // and hovering never rebuild the vertex buffers.
 //
@@ -288,13 +289,22 @@ attribute vec2 a_normal;       // unit
 attribute float a_thickness;   // screen pixels
 attribute vec3 a_fade;
 attribute vec2 a_style;        // level, kind (0 runtime, 1 type-only, 2 dynamic)
+attribute vec2 a_radii;        // of the source and target discs, map units
 attribute float a_positionCoef;
 attribute float a_normalCoef;
 
 uniform mat3 u_matrix;
 uniform float u_correctionRatio;
+uniform float u_sizeRatio;
+uniform float u_minRadius;
 uniform vec2 u_dimensions;
 ${COMMON}
+
+// The shortest a Dependency is drawn, in pixels: between discs that touch
+// or overlap, a stub across the point where they meet.
+const float MIN_LENGTH = 16.0;
+// The gap left between a Dependency's end and its disc, in pixels.
+const float END_GAP = 1.5;
 
 varying vec4 v_color;
 varying float v_alpha;
@@ -310,14 +320,32 @@ void main() {
   float width = a_style.y > 1.5 ? max(a_thickness, 2.2) : a_thickness;
   float halfPx = width * 0.5 + 1.0;
 
-  vec2 position = mix(a_positionStart, a_positionEnd, a_positionCoef);
+  // From disc boundary to disc boundary, so that a Dependency is drawn
+  // where it can be seen, above the discs, without covering its own ends.
+  float px = u_correctionRatio * 2.0;
+  vec2 axis = a_positionEnd - a_positionStart;
+  float d = length(axis);
+  vec2 dir = d > 0.0 ? axis / d : vec2(1.0, 0.0);
+  float rs = (max(a_radii.x / u_sizeRatio, u_minRadius) + END_GAP) * px;
+  float rt = (max(a_radii.y / u_sizeRatio, u_minRadius) + END_GAP) * px;
+  float gap = d - rs - rt;
+  float minLength = MIN_LENGTH * px;
+  vec2 start = a_positionStart + dir * rs;
+  vec2 end = a_positionEnd - dir * rt;
+  if (gap < minLength) {
+    vec2 middle = a_positionStart + dir * (rs + gap * 0.5);
+    start = middle - dir * minLength * 0.5;
+    end = middle + dir * minLength * 0.5;
+  }
+
+  vec2 position = mix(start, end, a_positionCoef);
   vec2 normal = a_normal * a_normalCoef;
   gl_Position = alpha > 0.004
-    ? vec4((u_matrix * vec3(position + normal * halfPx * u_correctionRatio * 2.0, 1)).xy, 0, 1)
+    ? vec4((u_matrix * vec3(position + normal * halfPx * px, 1)).xy, 0, 1)
     : vec4(2.0, 2.0, 2.0, 1.0);
 
-  vec2 s = (u_matrix * vec3(a_positionStart, 1)).xy;
-  vec2 e = (u_matrix * vec3(a_positionEnd, 1)).xy;
+  vec2 s = (u_matrix * vec3(start, 1)).xy;
+  vec2 e = (u_matrix * vec3(end, 1)).xy;
   v_along = a_positionCoef * length((e - s) * u_dimensions * 0.5);
   v_across = a_normalCoef * halfPx;
   v_half = width * 0.5;
@@ -367,6 +395,8 @@ void main() {
 const EDGE_UNIFORMS = [
   "u_matrix",
   "u_correctionRatio",
+  "u_sizeRatio",
+  "u_minRadius",
   "u_dimensions",
   "u_levelWeights",
   "u_time",
@@ -392,6 +422,7 @@ export function createEdgeProgram(frame: Frame) {
           { name: "a_thickness", size: 1, type: FLOAT },
           { name: "a_fade", size: 3, type: FLOAT },
           { name: "a_style", size: 2, type: FLOAT },
+          { name: "a_radii", size: 2, type: FLOAT },
         ],
         CONSTANT_ATTRIBUTES: [
           { name: "a_positionCoef", size: 1, type: FLOAT },
@@ -411,8 +442,8 @@ export function createEdgeProgram(frame: Frame) {
     processVisibleItem(
       edgeIndex: number,
       startIndex: number,
-      source: { x: number; y: number },
-      target: { x: number; y: number },
+      source: { x: number; y: number; size: number },
+      target: { x: number; y: number; size: number },
       data: object,
     ) {
       const d = data as EdgeAttributes;
@@ -435,6 +466,8 @@ export function createEdgeProgram(frame: Frame) {
       a[i++] = d.fadeAt;
       a[i++] = d.level;
       a[i++] = d.kind;
+      a[i++] = source.size;
+      a[i++] = target.size;
     }
 
     setUniforms(
@@ -449,6 +482,8 @@ export function createEdgeProgram(frame: Frame) {
     ) {
       gl.uniformMatrix3fv(u.u_matrix!, false, params.matrix);
       gl.uniform1f(u.u_correctionRatio!, params.correctionRatio);
+      gl.uniform1f(u.u_sizeRatio!, params.sizeRatio);
+      gl.uniform1f(u.u_minRadius!, frame.minRadiusPx);
       gl.uniform2f(u.u_dimensions!, params.width, params.height);
       gl.uniform3fv(u.u_levelWeights!, frame.levelWeights);
       gl.uniform1f(u.u_time!, clock());

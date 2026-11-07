@@ -94,6 +94,12 @@ describe("edge widths", () => {
     );
   });
 
+  it("makes the heaviest couplings clearly thicker than middling ones", () => {
+    expect(edgeWidth("packages", 1, false)).toBeGreaterThan(
+      3 * edgeWidth("packages", 0.5, false),
+    );
+  });
+
   it("stays thin between Files, where every Dependency weighs one import", () => {
     expect(edgeWidth("files", 1, false)).toBeLessThan(
       edgeWidth("directories", 1, false),

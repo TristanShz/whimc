@@ -48,3 +48,16 @@ func isolateUserCache(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CACHE_HOME", home+"/.cache")
 }
+
+func TestVersionPrintsTheVersionTheReleaseStamped(t *testing.T) {
+	stamped := version
+	version = "1.2.3"
+	t.Cleanup(func() { version = stamped })
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"version"}, &stdout, &stderr)
+
+	if code != 0 || stdout.String() != "whimc 1.2.3\n" {
+		t.Fatalf("exit code = %d, stdout = %q, want 0 and %q", code, stdout.String(), "whimc 1.2.3\n")
+	}
+}

@@ -2,6 +2,7 @@
 //
 //	whimc serve   [--port N] [--no-open] [path]
 //	whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
+//	whimc version
 package main
 
 import (
@@ -19,11 +20,16 @@ const usage = `Usage:
   whimc serve   [--port N] [--no-open] [path]          open the Map of the repository in the browser
   whimc compare [--base REF] [--target REF] [--json] [--tests=false] [path]
                                                        print what changed between two States
+  whimc version                                        print the version of whimc
 
 path defaults to the current directory. REF is a commit, branch or tag, or
 "worktree" (or empty) for the working tree. compare defaults to HEAD against
 the working tree, untracked Files included; --tests=false leaves test Files out.
 `
+
+// version is the release version, stamped by the release build with
+// -ldflags "-X main.version=...".
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -50,6 +56,9 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		err = serve(ctx, args[1:], stdout, stderr)
 	case "compare":
 		err = compare(ctx, args[1:], stdout, stderr)
+	case "version", "--version":
+		fmt.Fprintf(stdout, "whimc %s\n", version)
+		return 0
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0

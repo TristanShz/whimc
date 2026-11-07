@@ -39,6 +39,9 @@ type Workspace interface {
 	// Compare returns what differs between two States, File by File,
 	// aggregated per Directory and Package.
 	Compare(ctx context.Context, base, target State, q CompareQuery) (Comparison, error)
+	// Overview sums up a whole State in a few figures: Size, Module and
+	// Dependency counts, the commits of the Churn window, Size by language.
+	Overview(ctx context.Context, at State, q OverviewQuery) (Overview, error)
 	// Changes streams index updates (first run progress, working-tree edits).
 	Changes(ctx context.Context) (<-chan Update, error)
 	// Refs lists the branches, tags and recent commits a Comparison can

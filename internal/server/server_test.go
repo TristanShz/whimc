@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -298,6 +299,56 @@ func TestModuleDetailsOfAnUnknownModuleIsNotFound(t *testing.T) {
 	get(t, srv, "/api/module?id=pkg:nope", http.StatusNotFound, &e)
 	get(t, srv, "/api/module", http.StatusBadRequest, &e)
 	get(t, srv, "/api/module?id=nope", http.StatusBadRequest, &e)
+}
+
+func TestOverviewSumsUpTheStateInView(t *testing.T) {
+	srv, _ := shopServer(t, nil)
+	type overview struct {
+		Size, Packages, Directories, Files, Dependencies, Commits int
+		Languages                                                 []struct {
+			Language string
+			Size     int
+		}
+		MovingPackage *struct {
+			ID    string
+			Churn int
+		}
+		Partial bool
+	}
+	for _, tc := range []struct {
+		query string
+		want  string
+	}{
+		// The working tree, untracked tax.ts included, money.test.ts hidden.
+		{"", "size=7 packages=2 directories=3 files=5 dependencies=2 commits=2 ts=7 moving=pkg:packages/web/2"},
+		{"?tests=true", "size=9 packages=2 directories=3 files=6 dependencies=3 commits=2 ts=9 moving=pkg:packages/web/2"},
+		// One commit touched both Packages: the tie goes to the first path.
+		{"?ref=v1", "size=5 packages=2 directories=3 files=4 dependencies=2 commits=1 ts=5 moving=pkg:packages/core/1"},
+	} {
+		var o overview
+		get(t, srv, "/api/overview"+tc.query, http.StatusOK, &o)
+		got := fmt.Sprintf("size=%d packages=%d directories=%d files=%d dependencies=%d commits=%d",
+			o.Size, o.Packages, o.Directories, o.Files, o.Dependencies, o.Commits)
+		for _, l := range o.Languages {
+			got += fmt.Sprintf(" %s=%d", l.Language, l.Size)
+		}
+		if m := o.MovingPackage; m != nil {
+			got += fmt.Sprintf(" moving=%s/%d", m.ID, m.Churn)
+		}
+		if got != tc.want || o.Partial {
+			t.Errorf("/api/overview%s = %s partial=%v, want %s", tc.query, got, o.Partial, tc.want)
+		}
+	}
+}
+
+func TestOverviewRejectsBadQueries(t *testing.T) {
+	srv, _ := shopServer(t, nil)
+	var e struct{ Error string }
+	get(t, srv, "/api/overview?tests=maybe", http.StatusBadRequest, &e)
+	get(t, srv, "/api/overview?ref=nope", http.StatusBadRequest, &e)
+	if !strings.Contains(e.Error, `unknown ref "nope"`) {
+		t.Errorf("error = %q, want the unknown ref named", e.Error)
+	}
 }
 
 func TestUnknownAPIPathIsNotFound(t *testing.T) {

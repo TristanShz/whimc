@@ -42,6 +42,10 @@ _Avoid_: Weight, LOC count
 The number of commits that touched a Module within a sliding window, 90 days by default. Drawn as the colour of its node on the Map, from calm to moving a lot.
 _Avoid_: Activity, most modified
 
+**Overview**:
+A whole State summed up in a few figures beside the Map: its Size and the Size of each language, how many Packages, Directories, Files and File Dependencies it holds, the distinct commits of the Churn window that touched any File, and the Package that moved the most. It counts what the Map shows: hidden test Files are left out.
+_Avoid_: Stats, summary (a Comparison's own figures)
+
 ### Change
 
 **State**:

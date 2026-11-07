@@ -44,15 +44,7 @@ func (t *Tree) Dependencies(q Query, nodes []Node, fileDeps []FileDependency) []
 		if f.Test && !q.Tests {
 			return "", false
 		}
-		var id string
-		switch q.Level {
-		case Packages:
-			id = PackagePrefix + f.pkg
-		case Directories:
-			id = DirectoryPrefix + f.dir
-		default:
-			id = FilePrefix + f.Path
-		}
+		id := f.moduleID(q.Level)
 		return id, visible[id]
 	}
 	agg := map[[2]string]*KindCounts{}

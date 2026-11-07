@@ -19,13 +19,6 @@ const (
 	Files
 )
 
-// ID prefixes, one per Level.
-const (
-	PackagePrefix   = "pkg:"
-	DirectoryPrefix = "dir:"
-	FilePrefix      = "file:"
-)
-
 // Manifest is a manifest File found in the State: the folder it declares a
 // Package for, and the Package name it gives (possibly empty).
 type Manifest struct {
@@ -94,7 +87,7 @@ func Build(rootName string, manifests []Manifest, files []File) *Tree {
 		}
 	}
 	for _, f := range files {
-		dir := path.Dir(f.Path)
+		dir := DirectoryOf(f.Path)
 		owner := t.owner(dir)
 		if owner == nil {
 			owner = &pkg{path: "."}
@@ -118,21 +111,33 @@ func Build(rootName string, manifests []Manifest, files []File) *Tree {
 	return t
 }
 
-// Locate returns the folders of the Directory and the Package holding the
-// File at p, and whether the File is in the Tree.
-func (t *Tree) Locate(p string) (dir, pkg string, ok bool) {
+// ModuleOf returns the ID of the Module of a level holding the File at p: its
+// Package, its Directory or the File itself, and false when the File is not
+// in the Tree.
+func (t *Tree) ModuleOf(level Level, p string) (string, bool) {
 	i, ok := t.byPath[p]
 	if !ok {
-		return "", "", false
+		return "", false
 	}
-	return t.files[i].dir, t.files[i].pkg, true
+	return t.files[i].moduleID(level), true
+}
+
+// moduleID returns the ID of the File's Module at a level.
+func (f placedFile) moduleID(level Level) string {
+	switch level {
+	case Packages:
+		return ID(Packages, f.pkg)
+	case Directories:
+		return ID(Directories, f.dir)
+	}
+	return ID(Files, f.Path)
 }
 
 // PackageOf returns the folder of the Package a File at p belongs to, given
 // the folders holding a manifest: the nearest one enclosing it, "." (the
 // implicit root Package) when there is none. It agrees with Build.
 func PackageOf(manifestDirs map[string]bool, p string) string {
-	for dir := path.Dir(p); ; dir = path.Dir(dir) {
+	for dir := DirectoryOf(p); ; dir = path.Dir(dir) {
 		if manifestDirs[dir] || dir == "." {
 			return dir
 		}
@@ -203,8 +208,8 @@ func (t *Tree) Nodes(q Query) []Node {
 		}
 		if q.Level == Files && (!scoped || f.pkg == withinPkg || f.dir == withinDir) {
 			fileNodes = append(fileNodes, Node{
-				ID: FilePrefix + f.Path, Level: Files, Name: path.Base(f.Path), Path: f.Path,
-				Parent: DirectoryPrefix + f.dir, Size: f.Size, Churn: len(f.Commits), Test: f.Test,
+				ID: ID(Files, f.Path), Level: Files, Name: path.Base(f.Path), Path: f.Path,
+				Parent: ID(Directories, f.dir), Size: f.Size, Churn: len(f.Commits), Test: f.Test,
 			})
 		}
 	}
@@ -217,7 +222,7 @@ func (t *Tree) Nodes(q Query) []Node {
 		}
 		for p, agg := range pkgs {
 			nodes = append(nodes, Node{
-				ID: PackagePrefix + p, Level: Packages, Name: t.packages[p].name, Path: p,
+				ID: ID(Packages, p), Level: Packages, Name: t.packages[p].name, Path: p,
 				Size: agg.size, Churn: len(agg.commits), Children: len(agg.dirs),
 			})
 		}
@@ -227,8 +232,8 @@ func (t *Tree) Nodes(q Query) []Node {
 				continue
 			}
 			nodes = append(nodes, Node{
-				ID: DirectoryPrefix + d, Level: Directories, Name: t.directoryName(d, agg.pkg), Path: d,
-				Parent: PackagePrefix + agg.pkg, Size: agg.size, Churn: len(agg.commits), Children: agg.files,
+				ID: ID(Directories, d), Level: Directories, Name: t.directoryName(d, agg.pkg), Path: d,
+				Parent: ID(Packages, agg.pkg), Size: agg.size, Churn: len(agg.commits), Children: agg.files,
 			})
 		}
 	case Files:
@@ -242,14 +247,16 @@ func (t *Tree) Nodes(q Query) []Node {
 // unknown Module scopes the query to nothing.
 func (t *Tree) resolveWithin(within string) (pkgPath, dirPath string, scoped bool) {
 	const none = "\x00" // matches no folder
-	switch {
-	case within == "":
+	if within == "" {
 		return none, none, false
-	case strings.HasPrefix(within, PackagePrefix):
-		return strings.TrimPrefix(within, PackagePrefix), none, true
-	case strings.HasPrefix(within, DirectoryPrefix):
-		return none, strings.TrimPrefix(within, DirectoryPrefix), true
-	case strings.HasPrefix(within, FilePrefix):
+	}
+	if level, p, ok := ParseID(within); ok {
+		switch level {
+		case Packages:
+			return p, none, true
+		case Directories:
+			return none, p, true
+		}
 		return none, none, true // a File has no descendants
 	}
 	if _, ok := t.packages[within]; ok {

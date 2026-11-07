@@ -350,3 +350,41 @@ func TestMapOfAnUnknownRefFails(t *testing.T) {
 		t.Fatalf("Map error = %v, want an error naming the ref", err)
 	}
 }
+
+func TestQueryForAModuleIDFindsItAmongItsSiblings(t *testing.T) {
+	r := testrepo.New(t)
+	r.WriteFiles(map[string]string{
+		"package.json":     `{"name": "shop"}`,
+		"src/cart/cart.ts": "export const cart = 1\n",
+		"src/cart/item.ts": "export const item = 1\n",
+		"src/price.ts":     "export const price = 1\n",
+	})
+	r.Commit("initial")
+	ws := open(t, r)
+
+	for _, id := range []string{"pkg:.", "dir:src/cart", "file:src/cart/item.ts"} {
+		q, ok := engine.QueryFor(id)
+		if !ok {
+			t.Fatalf("QueryFor(%q) is not a Module ID", id)
+		}
+		if level, _ := engine.LevelOf(id); level != q.Level {
+			t.Errorf("LevelOf(%q) = %v, QueryFor gives %v", id, level, q.Level)
+		}
+		view, err := ws.Map(context.Background(), worktree, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.ContainsFunc(view.Modules, func(m engine.Module) bool { return m.ID == id }) {
+			t.Errorf("the view of QueryFor(%q) = %+v misses it", id, q)
+		}
+	}
+	q, _ := engine.QueryFor("file:src/cart/item.ts")
+	if q.Within != "dir:src/cart" {
+		t.Errorf("a File is looked for within %q, want its Directory dir:src/cart", q.Within)
+	}
+	for _, id := range []string{"", "pkg:", "src/price.ts", "module:x"} {
+		if _, ok := engine.QueryFor(id); ok {
+			t.Errorf("QueryFor(%q) took it for a Module ID", id)
+		}
+	}
+}

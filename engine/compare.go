@@ -160,12 +160,9 @@ func (c Comparison) At(level Level) LevelComparison {
 // Module returns how the Module with this ID changed. A Module the Comparison
 // does not list, unknown ones included, is Unchanged.
 func (c Comparison) Module(id string) ModuleChange {
-	level := Files
-	switch {
-	case strings.HasPrefix(id, modules.PackagePrefix):
-		level = Packages
-	case strings.HasPrefix(id, modules.DirectoryPrefix):
-		level = Directories
+	level, ok := LevelOf(id)
+	if !ok {
+		level = Files
 	}
 	ms := c.At(level).Modules
 	i := sort.Search(len(ms), func(i int) bool { return ms[i].ID >= id })
@@ -279,21 +276,6 @@ func (sc *stateComparison) dependencies() {
 	sc.removedDeps = only(sc.base.deps, pairs(sc.target.deps))
 }
 
-// moduleID returns the ID of the Module of level holding the File at p in
-// tree, and false when the File is not in tree.
-func moduleID(tree *modules.Tree, level Level, p string) (string, bool) {
-	dir, pkg, ok := tree.Locate(p)
-	switch {
-	case !ok:
-		return "", false
-	case level == Packages:
-		return modules.PackagePrefix + pkg, true
-	case level == Directories:
-		return modules.DirectoryPrefix + dir, true
-	}
-	return modules.FilePrefix + p, true
-}
-
 // level compares the Modules and Dependencies of one level.
 func (sc *stateComparison) level(w *workspace, level Level) LevelComparison {
 	mq := modules.Query{Level: modules.Level(level), Tests: sc.tests}
@@ -308,7 +290,7 @@ func (sc *stateComparison) level(w *workspace, level Level) LevelComparison {
 		if fc.change == Removed {
 			tree = sc.base.tree
 		}
-		id, ok := moduleID(tree, level, fc.path)
+		id, ok := tree.ModuleOf(modules.Level(level), fc.path)
 		if !ok {
 			continue
 		}
@@ -359,8 +341,8 @@ func (sc *stateComparison) level(w *workspace, level Level) LevelComparison {
 	underneath := map[[2]string]*dependencyCounts{}
 	tally := func(tree *modules.Tree, fileDeps []modules.FileDependency, added bool) {
 		for _, fd := range fileDeps {
-			from, ok1 := moduleID(tree, level, fd.From)
-			to, ok2 := moduleID(tree, level, fd.To)
+			from, ok1 := tree.ModuleOf(modules.Level(level), fd.From)
+			to, ok2 := tree.ModuleOf(modules.Level(level), fd.To)
 			if !ok1 || !ok2 || from == to {
 				continue
 			}

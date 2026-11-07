@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -127,24 +126,20 @@ func (s *server) handleCompare(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleModule(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	id := q.Get("id")
-	level, ok := levelOf(id)
+	mq, ok := engine.QueryFor(id)
 	if !ok {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("id %q: want a Module ID (pkg:…, dir:… or file:…)", id))
 		return
 	}
+	level := mq.Level
 	tests, err := boolParam(q.Get("tests"), "tests")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	mq.Tests = tests
 	at := engine.ParseState(q.Get("ref"))
-	// A File's siblings are the Files of its folder, its Directory; other
-	// Modules are looked up among their whole level.
-	within := ""
-	if level == engine.Files {
-		within = "dir:" + path.Dir(strings.TrimPrefix(id, "file:"))
-	}
-	view, err := s.ws.Map(r.Context(), at, engine.MapQuery{Level: level, Within: within, Tests: tests})
+	view, err := s.ws.Map(r.Context(), at, mq)
 	if err != nil {
 		writeEngineError(w, err)
 		return
@@ -220,23 +215,6 @@ func (s *server) handleChanges(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 	}
-}
-
-// levelOf returns the level of a Module ID from its prefix.
-func levelOf(id string) (engine.Level, bool) {
-	prefix, rest, ok := strings.Cut(id, ":")
-	if !ok || rest == "" {
-		return 0, false
-	}
-	switch prefix {
-	case "pkg":
-		return engine.Packages, true
-	case "dir":
-		return engine.Directories, true
-	case "file":
-		return engine.Files, true
-	}
-	return 0, false
 }
 
 func levelParam(v string) (engine.Level, error) {

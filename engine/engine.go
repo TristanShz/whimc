@@ -141,6 +141,28 @@ type MapQuery struct {
 	Tests bool
 }
 
+// LevelOf returns the Level of a Module ID, and false when id is not one.
+func LevelOf(id string) (Level, bool) {
+	level, _, ok := modules.ParseID(id)
+	return Level(level), ok
+}
+
+// QueryFor returns a MapQuery whose view holds the Module with this ID, if
+// it exists, among as few others as the hierarchy allows: its siblings. For
+// a File, that is the Files of its Directory; for a Directory or a Package,
+// its whole level. It returns false when id is not a Module ID.
+func QueryFor(id string) (MapQuery, bool) {
+	level, p, ok := modules.ParseID(id)
+	if !ok {
+		return MapQuery{}, false
+	}
+	q := MapQuery{Level: Level(level)}
+	if level == modules.Files {
+		q.Within = modules.ID(modules.Directories, modules.DirectoryOf(p))
+	}
+	return q, true
+}
+
 // MapView is the answer to a Map call.
 type MapView struct {
 	Level   Level    `json:"level"`

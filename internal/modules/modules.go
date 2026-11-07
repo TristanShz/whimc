@@ -118,6 +118,16 @@ func Build(rootName string, manifests []Manifest, files []File) *Tree {
 	return t
 }
 
+// Locate returns the folders of the Directory and the Package holding the
+// File at p, and whether the File is in the Tree.
+func (t *Tree) Locate(p string) (dir, pkg string, ok bool) {
+	i, ok := t.byPath[p]
+	if !ok {
+		return "", "", false
+	}
+	return t.files[i].dir, t.files[i].pkg, true
+}
+
 func (t *Tree) owner(dir string) *pkg {
 	for {
 		if p := t.packages[dir]; p != nil {

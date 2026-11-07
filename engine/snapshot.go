@@ -79,6 +79,8 @@ func (w *workspace) sourceOf(ctx context.Context, at State) (source, string, err
 type snapshot struct {
 	tree *modules.Tree
 	deps []modules.Edge
+	// blobs holds the blob hash of every File of the tree, by path.
+	blobs map[string]string
 }
 
 // snapshot builds the Module hierarchy of a State and resolves its File
@@ -138,6 +140,7 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 	learnt := map[index.BlobKey]index.Blob{}
 	var files []modules.File
 	parsed := map[string]parse.Result{}
+	blobs := map[string]string{}
 	for _, sf := range sources {
 		b, ok := known[sf.key]
 		if !ok {
@@ -167,6 +170,7 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 		}
 		files = append(files, modules.File{Path: sf.path, Size: b.Size, Test: modules.IsTest(sf.path)})
 		parsed[sf.path] = *b.Parse
+		blobs[sf.path] = sf.key.Blob
 	}
 	if err := w.ix.PutBlobs(learnt); err != nil {
 		return nil, fmt.Errorf("index: %w", err)
@@ -175,7 +179,7 @@ func (w *workspace) snapshot(ctx context.Context, at State) (*snapshot, error) {
 	if err := w.attributeChurn(ctx, commit, files); err != nil {
 		return nil, fmt.Errorf("churn: %w", err)
 	}
-	snap := &snapshot{tree: modules.Build(filepath.Base(w.repo.Root()), manifests, files)}
+	snap := &snapshot{tree: modules.Build(filepath.Base(w.repo.Root()), manifests, files), blobs: blobs}
 	for _, d := range resolve.Resolve(resolve.Snapshot{Files: parsed, Configs: configs}) {
 		snap.deps = append(snap.deps, modules.Edge{From: d.From, To: d.To, Kind: d.Kind})
 	}

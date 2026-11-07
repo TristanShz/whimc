@@ -37,7 +37,7 @@ type Workspace interface {
 	Map(ctx context.Context, at State, q MapQuery) (MapView, error)
 	// Compare returns what differs between two States, File by File,
 	// aggregated per Directory and Package.
-	Compare(ctx context.Context, base, target State) (Comparison, error)
+	Compare(ctx context.Context, base, target State, q CompareQuery) (Comparison, error)
 	// Changes streams index updates (first run progress, working-tree edits).
 	Changes(ctx context.Context) (<-chan Update, error)
 	// Stats reports the work the Workspace did since it was opened.
@@ -91,6 +91,25 @@ func (l Level) String() string {
 	return fmt.Sprintf("Level(%d)", int(l))
 }
 
+// ParseLevel reads a Level from its name: packages, directories or files.
+func ParseLevel(name string) (Level, error) {
+	for l := Packages; l <= Files; l++ {
+		if name == l.String() {
+			return l, nil
+		}
+	}
+	return 0, fmt.Errorf("unknown level %q: want packages, directories or files", name)
+}
+
+// MarshalText encodes the Level as its name.
+func (l Level) MarshalText() ([]byte, error) { return []byte(l.String()), nil }
+
+// UnmarshalText decodes a Level name.
+func (l *Level) UnmarshalText(text []byte) (err error) {
+	*l, err = ParseLevel(string(text))
+	return err
+}
+
 // Rect is an area of the Map, in map coordinates.
 type Rect struct{ X0, Y0, X1, Y1 float64 }
 
@@ -142,6 +161,20 @@ func (k DependencyKind) String() string {
 	return fmt.Sprintf("DependencyKind(%d)", int(k))
 }
 
+// MarshalText encodes the kind as its name: runtime, type-only or dynamic.
+func (k DependencyKind) MarshalText() ([]byte, error) { return []byte(k.String()), nil }
+
+// UnmarshalText decodes a kind name.
+func (k *DependencyKind) UnmarshalText(text []byte) error {
+	for _, kind := range []DependencyKind{Runtime, TypeOnly, Dynamic} {
+		if string(text) == kind.String() {
+			*k = kind
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown dependency kind %q", text)
+}
+
 // KindCounts counts the File Dependencies of an aggregate by kind.
 type KindCounts struct{ Runtime, TypeOnly, Dynamic int }
 
@@ -183,11 +216,6 @@ type Module struct {
 	// coordinates shared by every level: a child sits inside its parent's
 	// disc. Radius is the radius of its disc, from its Size (see Radius).
 	X, Y, Radius float64
-}
-
-// Comparison is what differs between two States.
-type Comparison struct {
-	Base, Target State
 }
 
 // Update is a change of the index pushed by Changes.
@@ -277,10 +305,6 @@ func (w *workspace) Map(ctx context.Context, at State, q MapQuery) (MapView, err
 		})
 	}
 	return view, nil
-}
-
-func (w *workspace) Compare(ctx context.Context, base, target State) (Comparison, error) {
-	return Comparison{}, fmt.Errorf("compare: %w", ErrNotImplemented)
 }
 
 func (w *workspace) Changes(ctx context.Context) (<-chan Update, error) {

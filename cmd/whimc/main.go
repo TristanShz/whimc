@@ -139,7 +139,7 @@ func compare(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	}
 	defer ws.Close()
 
-	if _, err := ws.Compare(ctx, engine.State{Ref: *base}, engine.State{Ref: *target}); err != nil {
+	if _, err := ws.Compare(ctx, engine.ParseState(*base), engine.ParseState(*target), engine.CompareQuery{Tests: true}); err != nil {
 		return err
 	}
 	return nil
